@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0d12">
+  <title>ASHFALL : Last City</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="game-root">
+
+  <!-- 3D render target -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- Full-screen post FX overlays (cheap CSS, no extra render passes) -->
+  <div id="fx-vignette"></div>
+  <div id="fx-damage"></div>
+  <div id="fx-lowhp"></div>
+
+  <!-- ============================ HUD ============================ -->
+  <div id="hud" class="hidden">
+    <div class="hud-top-left panel-hud">
+      <div class="hp-row">
+        <span class="hp-label">HP</span>
+        <div class="hp-bar"><div id="hp-lag"></div><div id="hp-fill"></div></div>
+        <span id="hp-text">100</span>
+      </div>
+      <div class="stat-row"><span>SCORE</span><b id="score-text">0</b></div>
+      <div id="fps-meter" class="hidden">60 FPS</div>
+    </div>
+
+    <div class="hud-top-center panel-hud">
+      <div class="wave-label">WAVE <b id="wave-text">1</b></div>
+      <div class="enemies-left"><span id="enemies-text">0</span> hostiles</div>
+    </div>
+
+    <div class="hud-top-right">
+      <div class="panel-hud kills"><span>KILLS</span><b id="kills-text">0</b></div>
+      <button id="btn-pause" class="icon-btn" aria-label="Pause">
+        <svg viewBox="0 0 24 24" width="20" height="20"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+      </button>
+    </div>
+
+    <div id="crosshair"><i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="ch-dot"></i></div>
+    <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+    <div id="dmg-indicators"></div>
+    <div id="dmg-numbers"></div>
+    <div id="score-popups"></div>
+    <div id="toast"></div>
+
+    <div id="wave-banner">
+      <small id="wave-banner-sub">SURVIVE</small>
+      <strong id="wave-banner-title">WAVE 1</strong>
+    </div>
+
+    <div id="reload-ring" class="hidden">
+      <svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17" class="track"/><circle id="reload-progress" cx="20" cy="20" r="17" class="prog"/></svg>
+      <span>RELOADING</span>
+    </div>
+
+    <div class="ammo-box panel-hud">
+      <div id="weapon-name">PISTOL</div>
+      <div class="ammo"><b id="ammo-mag">12</b><span class="sep">/</span><em id="ammo-reserve">&infin;</em></div>
+      <div id="weapon-slots"><i class="on"></i><i></i><i></i></div>
+    </div>
+
+    <!-- Touch controls (hidden automatically on non-touch devices) -->
+    <div id="touch-controls">
+      <div id="look-zone"></div>
+      <div id="joystick-zone">
+        <div id="joystick-base"><div id="joystick-knob"></div></div>
+      </div>
+      <div id="action-buttons">
+        <button id="btn-fire" class="ctrl-btn fire" aria-label="Fire">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none" stroke-width="2"/><circle cx="12" cy="12" r="2"/><path d="M12 1v5M12 18v5M1 12h5M18 12h5" stroke-width="2"/></svg>
+        </button>
+        <button id="btn-jump" class="ctrl-btn" aria-label="Jump">
+          <svg viewBox="0 0 24 24"><path d="M5 15l7-7 7 7" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 20h14" stroke-width="2.2" stroke-linecap="round"/></svg>
+        </button>
+        <button id="btn-reload" class="ctrl-btn" aria-label="Reload">
+          <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7" fill="none" stroke-width="2.4" stroke-linecap="round"/><path d="M20 3v5h-5" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button id="btn-switch" class="ctrl-btn" aria-label="Switch weapon">
+          <svg viewBox="0 0 24 24"><path d="M4 8h14l-3-3M20 16H6l3 3" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button id="btn-sprint" class="ctrl-btn small" aria-label="Sprint">RUN</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ MENUS ============================ -->
+  <section id="menu-main" class="screen active">
+    <div class="menu-layout">
+      <div class="brand">
+        <span class="kicker">SECTOR 7 <i></i> SIGNAL LOST</span>
+        <h1 class="title" data-text="ASHFALL">ASHFALL</h1>
+        <p class="tagline">The city went dark. Something is still walking.</p>
+      </div>
+      <nav class="menu-nav">
+        <button class="menu-btn primary" data-action="play" id="btn-play" disabled><span class="idx">01</span>PLAY</button>
+        <button class="menu-btn" data-action="settings"><span class="idx">02</span>SETTINGS</button>
+        <button class="menu-btn" data-action="howto"><span class="idx">03</span>HOW TO PLAY</button>
+        <div class="menu-foot">BEST <b id="best-score">0</b><span class="dot"></span><span id="loading-status">Loading engine</span></div>
+      </nav>
+    </div>
+  </section>
+
+  <section id="menu-settings" class="screen">
+    <div class="sheet">
+      <header class="sheet-head"><h2>Settings</h2><button class="menu-btn ghost" data-action="back">BACK</button></header>
+      <div class="sheet-body scroll">
+        <div class="set-row">
+          <label>Graphics</label>
+          <div class="segmented" id="quality-seg">
+            <button data-quality="low">LOW</button>
+            <button data-quality="medium">MEDIUM</button>
+            <button data-quality="high">HIGH</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <label for="set-auto">Auto-adjust quality<small>Drops effects if FPS falls</small></label>
+          <label class="switch"><input type="checkbox" id="set-auto"><span></span></label>
+        </div>
+        <div class="set-row">
+          <label for="set-sens">Look sensitivity</label>
+          <div class="range-wrap"><input type="range" id="set-sens" min="0.3" max="2.5" step="0.05"><output id="sens-val">1.00x</output></div>
+        </div>
+        <div class="set-row">
+          <label for="set-vol">Volume</label>
+          <div class="range-wrap"><input type="range" id="set-vol" min="0" max="1" step="0.05"><output id="vol-val">70%</output></div>
+        </div>
+        <div class="set-row">
+          <label for="set-fps">Show FPS</label>
+          <label class="switch"><input type="checkbox" id="set-fps"><span></span></label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="menu-howto" class="screen">
+    <div class="sheet wide">
+      <header class="sheet-head"><h2>How to play</h2><button class="menu-btn ghost" data-action="back">BACK</button></header>
+      <div class="sheet-body scroll howto">
+        <div class="howto-col">
+          <h3>Touch</h3>
+          <dl>
+            <dt>Left thumb</dt><dd>Joystick moves. Push it all the way forward to sprint.</dd>
+            <dt>Right side</dt><dd>Swipe to turn the camera.</dd>
+            <dt>Fire</dt><dd>Hold to shoot. Drag while holding to track targets.</dd>
+            <dt>Jump / Reload / Swap / Run</dt><dd>The smaller buttons around Fire.</dd>
+          </dl>
+          <h3>Keyboard</h3>
+          <dl>
+            <dt>WASD + Mouse</dt><dd>Move and aim (click the screen to lock the mouse).</dd>
+            <dt>Click</dt><dd>Fire</dd>
+            <dt>Space / Shift</dt><dd>Jump / Sprint</dd>
+            <dt>R / Q / 1-3</dt><dd>Reload / next weapon / pick weapon</dd>
+            <dt>Esc or P</dt><dd>Pause</dd>
+          </dl>
+        </div>
+        <div class="howto-col">
+          <h3>Hostiles</h3>
+          <ul class="enemy-list">
+            <li><i style="--c: oklch(0.66 0.24 28)"></i><b>Walker</b><span>Slow and steady. Comes in numbers.</span></li>
+            <li><i style="--c: oklch(0.88 0.18 95)"></i><b>Runner</b><span>Fast, fragile, lunges when close.</span></li>
+            <li><i style="--c: oklch(0.65 0.25 310)"></i><b>Brute</b><span>Huge health, ground-slam hits hard. From wave 3.</span></li>
+          </ul>
+          <h3>Survive</h3>
+          <ul class="tips">
+            <li>Headshots deal double damage.</li>
+            <li>Shoot red barrels to blow up crowds (keep your distance).</li>
+            <li>Green crosses heal, amber boxes refill ammo. The pistol never runs dry.</li>
+            <li>Every cleared wave pays a bonus and patches you up.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="menu-pause" class="screen">
+    <div class="sheet compact">
+      <h2 class="big">PAUSED</h2>
+      <nav class="menu-nav stacked">
+        <button class="menu-btn primary" data-action="resume">RESUME</button>
+        <button class="menu-btn" data-action="settings">SETTINGS</button>
+        <button class="menu-btn" data-action="restart">RESTART</button>
+        <button class="menu-btn ghost" data-action="menu">MAIN MENU</button>
+      </nav>
+    </div>
+  </section>
+
+  <section id="menu-over" class="screen">
+    <div class="sheet compact over">
+      <h2 class="big danger">YOU DIED</h2>
+      <p id="over-newbest" class="newbest hidden">NEW BEST</p>
+      <div class="over-stats">
+        <div><span>WAVE</span><b id="over-wave">1</b></div>
+        <div><span>KILLS</span><b id="over-kills">0</b></div>
+        <div><span>SCORE</span><b id="over-score">0</b></div>
+        <div><span>BEST</span><b id="over-best">0</b></div>
+      </div>
+      <nav class="menu-nav stacked">
+        <button class="menu-btn primary" data-action="restart">PLAY AGAIN</button>
+        <button class="menu-btn ghost" data-action="menu">MAIN MENU</button>
+      </nav>
+    </div>
+  </section>
+
+  <div id="rotate-hint">
+    <div class="rotate-card">
+      <div class="phone-icon"></div>
+      <p>Rotate your phone to landscape for the full experience.</p>
+      <button class="menu-btn ghost" data-action="portrait-ok">PLAY IN PORTRAIT</button>
+    </div>
+  </div>
+
+  <div id="error-box" class="hidden"></div>
+</div>
+
+<!-- Three.js r128 (classic global build, works when opening index.html from disk) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
