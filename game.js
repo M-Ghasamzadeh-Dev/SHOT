@@ -329,6 +329,18 @@
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(FOG_COLOR, 0.03);
 
+  /** Day / night cycle. dayF: 0 = full night, 1 = full day (eased toward dayTarget). */
+  const cycle = { night: 1, w: 0, waves: 3, phase: 'night', dayT: 0, dayLen: 60, dayF: 0, dayTarget: 0, daySpawnT: 0 };
+  let fogBase = 0.03, emisBase = 0.26;
+  const PAL = {
+    fogN: new THREE.Color(FOG_COLOR),  fogD: new THREE.Color(0xa3b0b8),
+    topN: new THREE.Color(0x04060b),   topD: new THREE.Color(0x5f7f9c),
+    glowN: new THREE.Color(0x4a2210),  glowD: new THREE.Color(0x8a6a48),
+    hemiN: new THREE.Color(0x6f80a8),  hemiD: new THREE.Color(0xd2dceb),
+    grdN: new THREE.Color(0x221a14),   grdD: new THREE.Color(0x5e564c),
+    sunN: new THREE.Color(0xa4b8e6),   sunD: new THREE.Color(0xfff1d6)
+  };
+
   const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.08, 220);
   camera.rotation.order = 'YXZ';
   scene.add(camera);
@@ -1436,7 +1448,7 @@
   function toggleScope() { if (state === 'playing') setScope(!scoped); }
   function resetScopeNow() {
     scoped = false; scopeAmt = 0; camera.fov = baseFov; camera.updateProjectionMatrix();
-    scene.fog.density = 0.03; H.hud.classList.remove('scoped');
+    scene.fog.density = fogBase; H.hud.classList.remove('scoped');
   }
   function jump() {
     if (player.grounded && player.alive) { player.velY = PLAYER_CFG.jump; player.grounded = false; }
@@ -1530,7 +1542,7 @@
     const nf = lerp(camera.fov, tfov, Math.min(1, dt * 16));
     if (Math.abs(nf - camera.fov) > 0.01) { camera.fov = nf; camera.updateProjectionMatrix(); }
     scopeAmt = lerp(scopeAmt, scoped ? 1 : 0, Math.min(1, dt * 12));
-    scene.fog.density = lerp(0.03, 0.011, scopeAmt);
+    scene.fog.density = lerp(fogBase, Math.min(fogBase, 0.011), scopeAmt);
     const mv = Math.min(1, player.moving);
     player.bobT += dt * (player.running ? 12 : 8.5) * mv;
     const bobY = player.grounded ? Math.sin(player.bobT * 2) * 0.045 * mv : 0;
@@ -1546,7 +1558,7 @@
     camera.getWorldDirection(_fxv);
     flashlight.position.copy(camera.position).addScaledVector(_right.set(1, 0, 0).applyQuaternion(camera.quaternion), 0.25);
     flashlight.target.position.copy(camera.position).addScaledVector(_fxv, 12);
-    flashlight.intensity = 1.6;
+    flashlight.intensity = 1.6 * (1 - cycle.dayF);
   }
 
   function updateViewmodel(dt) {
@@ -1603,7 +1615,6 @@
   /* ---- Zombie sprites: the three photo-real zombie images (sprites.js) drawn as upright,
    *      camera-facing cards. Hit-boxes are invisible boxes (body + head) so headshots still work. */
   const SPRITE_H = 2.1;              // card height in enemy-local units (root.scale multiplies by def.scale)
-  const EMIS_BASE = 0.26;            // keeps zombies readable in the dark
   const spriteTexCache = {}, spriteGeoCache = {};
   const hitMat = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
   let blobTex = null;
@@ -1644,7 +1655,7 @@
     // Lambert so the flashlight / moon still light them; emissive base + emissiveMap keeps detail in the dark.
     const mat = new THREE.MeshLambertMaterial({ map: tex, color: tex ? 0xffffff : def.skin, transparent: true, alphaTest: 0.35, side: THREE.DoubleSide });
     if (tex) mat.emissiveMap = tex;
-    mat.emissive.setScalar(EMIS_BASE);
+    mat.emissive.setScalar(emisBase);
 
     let geo = spriteGeoCache[typeKey];
     if (!geo) {
@@ -1722,7 +1733,7 @@
   }
 
   function setEmissive(e, f) {
-    for (const m of e.mats) m.emissive.setRGB(EMIS_BASE + f, EMIS_BASE + f * 0.35, EMIS_BASE + f * 0.3);
+    for (const m of e.mats) m.emissive.setRGB(emisBase + f, emisBase + f * 0.35, emisBase + f * 0.3);
     e.flashOn = f > 0;
   }
 
@@ -1892,8 +1903,8 @@
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i], def = e.def, r = e.root;
 
-      if (e.flash > 0) { e.flash -= dt; setEmissive(e, Math.max(0, e.flash / 0.12) * 0.9); }
-      else if (e.flashOn) setEmissive(e, 0);
+      if (e.flash > 0) e.flash -= dt;
+      setEmissive(e, Math.max(0, e.flash / 0.12) * 0.9);
 
       e.camYaw = Math.atan2(camera.position.x - r.position.x, camera.position.z - r.position.z);
       e.blob.position.set(r.position.x, 0.035, r.position.z);
@@ -2205,20 +2216,77 @@
     if (best) { out.set(best.x, 0, best.z); return true; }
     return false;
   }
+  const wavesForNight = (n) => Math.min(2 + n, 7);        // night 1: 3 waves, night 2: 4 ... max 7
+  const DAY_MUL = (n) => ({ hp: 1 + (n - 1) * 0.1, dmg: 0.8, spd: 0.85 });
+
+  function startNight(n) {
+    cycle.night = n; cycle.waves = wavesForNight(n); cycle.w = 0;
+    cycle.phase = 'night'; cycle.dayTarget = 0;
+    nextNightWave();
+  }
+  function nextNightWave() {
+    cycle.w++;
+    const level = (cycle.night - 1) * 2 + cycle.w;           // difficulty level used for hp / count / enemy mix
+    startWave(level);
+  }
   function startWave(n) {
     wave.n = n;
-    wave.toSpawn = Math.round(6 + n * 3.5 + n * n * 0.4);
+    wave.toSpawn = Math.min(50, Math.round(6 + n * 3.5 + n * n * 0.4));
     wave.mul = { hp: 1 + (n - 1) * 0.2, dmg: 1 + (n - 1) * 0.12, spd: 1 + Math.min(0.5, (n - 1) * 0.05) };
     wave.spawnT = 1.2;
     wave.inBreak = false;
     if (n > 1) resetBarrels();
-    banner('موج ' + fa(n), n === 1 ? 'تا صبح زنده بمون' : n === 2 ? 'دونده‌ها دارن میان' : n === 3 ? 'غول‌ها دارن میان' : 'حمله‌ی تازه', false);
+    const last = cycle.w === cycle.waves;
+    const sub = (cycle.w === 1 ? (cycle.night === 1 ? 'تا صبح زنده بمون' : 'شب دوباره رسید') : last ? 'آخرین موج شب' : n === 2 ? 'دونده‌ها دارن میان' : n === 3 ? 'غول‌ها دارن میان' : 'حمله‌ی تازه');
+    banner('شب ' + fa(cycle.night) + ' · موج ' + fa(cycle.w), 'از ' + fa(cycle.waves) + ' موج  ·  ' + sub, false);
     Sound.wave();
   }
+
+  function startDay() {
+    cycle.phase = 'day'; cycle.dayTarget = 1;
+    cycle.dayT = cycle.dayLen; cycle.daySpawnT = rand(6, 10);
+    wave.toSpawn = 0; wave.inBreak = false; wave.mul = DAY_MUL(cycle.night);
+    const bonus = 400 * cycle.night;
+    score += bonus;
+    player.hp = Math.min(PLAYER_CFG.maxHp, player.hp + 40);
+    arsenal.forEach((a) => {
+      a.reserve = Math.min(a.def.maxReserve, a.reserve + Math.ceil(a.def.maxReserve * 0.5));
+    });
+    // supplies scattered around you
+    const kinds = ['ammo', 'ammo', 'health', 'ammo'];
+    for (const kind of kinds) {
+      for (let tries = 0; tries < 12; tries++) {
+        const ang = rand(0, TAU), d = rand(6, 22);
+        const x = player.pos.x + Math.sin(ang) * d, z = player.pos.z + Math.cos(ang) * d;
+        if (Math.abs(x) > 66 || Math.abs(z) > 66 || pointBlocked(x, z, 1)) continue;
+        spawnPickup(kind, x, z); break;
+      }
+    }
+    banner('صبح شد', fa('+' + bonus) + '  ·  روز آرومه، مهمات جمع کن', true);
+    Sound.clear();
+  }
+
+  function updateDay(dt) {
+    cycle.dayT -= dt;
+    if (cycle.dayT <= 8 && cycle.dayTarget === 1) {
+      cycle.dayTarget = 0;                                    // dusk begins
+      banner('غروب داره میشه', 'شب ' + fa(cycle.night + 1) + ' نزدیکه', false);
+      Sound.wave();
+    }
+    if (cycle.dayT <= 0) { startNight(cycle.night + 1); return; }
+    // only a thin trickle of slow zombies in daylight
+    cycle.daySpawnT -= dt;
+    if (cycle.daySpawnT <= 0) {
+      cycle.daySpawnT = rand(8, 14);
+      if (cycle.dayT > 12 && liveEnemyCount() < 2 + (cycle.night > 2 ? 1 : 0) && findSpawnPoint(_sp)) spawnEnemy('walker', _sp.x, _sp.z);
+    }
+  }
+
   function updateWaves(dt) {
+    if (cycle.phase === 'day') { updateDay(dt); return; }
     if (wave.inBreak) {
       wave.breakT -= dt;
-      if (wave.breakT <= 0) startWave(wave.n + 1);
+      if (wave.breakT <= 0) nextNightWave();
       return;
     }
     wave.spawnT -= dt;
@@ -2229,6 +2297,7 @@
       wave.spawnT = Math.max(0.25, 1.1 - wave.n * 0.08) * rand(0.6, 1.2);
     }
     if (wave.toSpawn === 0 && live === 0) {
+      if (cycle.w >= cycle.waves) { startDay(); return; }
       wave.inBreak = true;
       wave.breakT = 5;
       const bonus = 250 * wave.n;
@@ -2408,7 +2477,7 @@
    * ======================================================================= */
   const H = {
     hud: $('hud'), hpFill: $('hp-fill'), hpLag: $('hp-lag'), hpText: $('hp-text'),
-    score: $('score-text'), kills: $('kills-text'), wave: $('wave-text'), enemies: $('enemies-text'),
+    score: $('score-text'), kills: $('kills-text'), wave: $('wave-text'), phase: $('phase-text'), enemies: $('enemies-text'),
     mag: $('ammo-mag'), reserve: $('ammo-reserve'), weaponName: $('weapon-name'),
     slots: $('weapon-slots').children, ammoBox: document.querySelector('.ammo-box'),
     crosshair: $('crosshair'), hitmarker: $('hitmarker'), fps: $('fps-meter'),
@@ -2514,7 +2583,13 @@
     }
     setText('score', H.score, String(score));
     setText('kills', H.kills, String(kills));
-    setText('wave', H.wave, String(wave.n));
+    if (cycle.phase === 'day') {
+      setText('phase', H.phase, 'روز ' + cycle.night + ' · شب بعد تا');
+      setText('wave', H.wave, String(Math.max(0, Math.ceil(cycle.dayT))));
+    } else {
+      setText('phase', H.phase, 'شب ' + cycle.night + ' · موج');
+      setText('wave', H.wave, cycle.w + '/' + cycle.waves);
+    }
     setText('enemies', H.enemies, String(wave.toSpawn + liveEnemyCount()));
 
     const w = arsenal[curW];
@@ -2592,6 +2667,8 @@
     reloadT = 0; switchT = 0; fireCd = 0; autoReloadT = 0; flashT = 0;
     vm.kick = 0; vm.heat = 0; vm.recoilPitch = 0;
     score = 0; kills = 0; gameTime = 0; shake = 0; dmgFlash = 0;
+    cycle.night = 1; cycle.w = 0; cycle.phase = 'night'; cycle.dayT = 0; cycle.dayTarget = 0; wave.n = 0; wave.inBreak = false; wave.toSpawn = 0;
+    applyDayNight(0, true);
     dmgInds.forEach((d) => { d.t = 0; d.el.style.opacity = '0'; });
     input.sprint = false; sprintBtn.classList.remove('toggled');
     resetInput();
@@ -2607,7 +2684,7 @@
     state = 'playing';
     showScreen(null);
     setHudVisible(true);
-    startWave(1);
+    startNight(1);
     updateCamera(0);
     requestLock();
   }
@@ -2968,7 +3045,7 @@
     }
     for (const l of streetLights) {
       const L = l.userData.lamp;
-      l.intensity = L ? 2.4 * L.cur : 0;
+      l.intensity = L ? 2.4 * L.cur * (1 - cycle.dayF) : 0;
     }
     explosionLight.intensity = Math.max(0, explosionLight.intensity - dt * 18);
   }
@@ -3003,13 +3080,15 @@
     while (ambientAcc >= 1) {
       ambientAcc -= 1;
       const x = cx + rand(-18, 18), z = cz + rand(-18, 18), y = cy + rand(-1, 9);
-      if (Math.random() < 0.25) sparks.spawn(x, y, z, rand(-0.3, 0.3), rand(-0.1, 0.4), rand(-0.3, 0.3), rand(2, 4), 0.07, 0.03, 1, 0.45, 0.15, 0.9, 0.05, 0.2);
+      if (Math.random() < 0.25 * (1 - cycle.dayF)) sparks.spawn(x, y, z, rand(-0.3, 0.3), rand(-0.1, 0.4), rand(-0.3, 0.3), rand(2, 4), 0.07, 0.03, 1, 0.45, 0.15, 0.9, 0.05, 0.2);
       else smoke.spawn(x, y, z, rand(0.2, 0.6), rand(-0.5, -0.2), rand(-0.2, 0.2), rand(3, 5), 0.06, 0.06, 0.55, 0.55, 0.55, 0.5, 0, 0);
     }
   }
 
   const lightning = { t: rand(10, 20), flash: 0 };
+  let hemiBase = 0.55;
   function updateLightning(dt) {
+    if (cycle.dayF > 0.35) { lightning.flash = 0; skyMat.uniforms.flash.value = 0; hemi.intensity = hemiBase; return; }
     lightning.t -= dt;
     if (lightning.t <= 0) {
       lightning.t = rand(14, 30);
@@ -3019,11 +3098,38 @@
     if (lightning.flash > 0) {
       lightning.flash = Math.max(0, lightning.flash - dt * 2.5);
       const f = lightning.flash * (Math.random() < 0.3 ? 0.3 : 1);
-      hemi.intensity = 0.55 + f * 2.2;
+      hemi.intensity = hemiBase + f * 2.2;
       skyMat.uniforms.flash.value = f;
-    } else if (hemi.intensity !== 0.55) {
-      hemi.intensity = 0.55; skyMat.uniforms.flash.value = 0;
+    } else if (hemi.intensity !== hemiBase) {
+      hemi.intensity = hemiBase; skyMat.uniforms.flash.value = 0;
     }
+  }
+
+  /** Blends sky, fog, light colours and intensities between night and day. */
+  let lastVig = -1;
+  function applyDayNight(dt, snap) {
+    const tgt = state === 'menu' ? 0 : cycle.dayTarget;
+    if (snap) cycle.dayF = tgt;
+    else cycle.dayF += clamp(tgt - cycle.dayF, -dt / 7, dt / 7);      // ~7s dusk / dawn
+    const t = cycle.dayF, k = t * t * (3 - 2 * t);
+    scene.fog.color.lerpColors(PAL.fogN, PAL.fogD, k);
+    renderer.setClearColor(scene.fog.color, 1);
+    skyMat.uniforms.horizon.value.copy(scene.fog.color);
+    skyMat.uniforms.top.value.lerpColors(PAL.topN, PAL.topD, k);
+    skyMat.uniforms.glow.value.lerpColors(PAL.glowN, PAL.glowD, k);
+    fogBase = lerp(0.03, 0.013, k);
+    if (scopeAmt < 0.01) scene.fog.density = fogBase;
+    hemi.color.lerpColors(PAL.hemiN, PAL.hemiD, k);
+    hemi.groundColor.lerpColors(PAL.grdN, PAL.grdD, k);
+    hemiBase = lerp(0.55, 1.0, k);
+    moon.color.lerpColors(PAL.sunN, PAL.sunD, k);
+    moon.intensity = lerp(0.6, 1.5, k);
+    moonHalo.material.opacity = 0.45 * (1 - k);
+    moonCore.material.opacity = 0.95 * (1 - k);
+    renderer.toneMappingExposure = lerp(1.3, 1.0, k);
+    emisBase = lerp(0.26, 0.05, k);
+    const vig = Math.round((1 - 0.55 * k) * 50) / 50;
+    if (vig !== lastVig) { lastVig = vig; $('fx-vignette').style.opacity = vig; }
   }
 
   function updateEnvironment(dt) {
@@ -3034,6 +3140,7 @@
     const fx = Math.round(camera.position.x / 2) * 2, fz = Math.round(camera.position.z / 2) * 2;
     moon.target.position.set(fx, 0, fz);
     moon.position.set(fx + MOON_OFFSET.x, MOON_OFFSET.y, fz + MOON_OFFSET.z);
+    applyDayNight(dt, false);
     updateWorldLights(dt);
     updateFires(dt);
     updateAmbient(dt);
