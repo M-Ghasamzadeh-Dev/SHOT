@@ -81,11 +81,16 @@
 
   /** Enemy archetypes. Wave multipliers scale hp / damage / speed on top of these. */
   const ENEMY_TYPES = {
-    walker: { hp: 90,  speed: 2.7, damage: 14, range: 1.7, cooldown: 1.2, windup: 0.38, score: 100, scale: 1.0,  radius: 0.42,
+    // `sp` = sprite hit-box layout (fractions of the sprite): body width, head height/width/x, eye position.
+    // `react` = how strongly hits shake/stagger the zombie (giants barely flinch).
+    walker: { hp: 90,  speed: 2.7, damage: 14, range: 1.7, cooldown: 1.2, windup: 0.38, score: 100, scale: 1.0,  radius: 0.42, react: 1.0,
+      sp: { bodyW: 0.74, headH: 0.15, headW: 0.30, headX: 0.50, eyeX: 0.506, eyeY: 0.069 },
       skin: 0x5d6b55, cloth: 0x2b2e36, eye: 0xff3b2f, bar: 0xff4a3a, blood: [0.32, 0.03, 0.02], spark: [1, 0.25, 0.15] },
-    runner: { hp: 50,  speed: 5.6, damage: 11,  range: 1.6, cooldown: 0.8, windup: 0.22, score: 150, scale: 0.9,  radius: 0.38,
+    runner: { hp: 50,  speed: 5.6, damage: 11,  range: 1.6, cooldown: 0.8, windup: 0.22, score: 150, scale: 0.9,  radius: 0.38, react: 1.2,
+      sp: { bodyW: 0.78, headH: 0.19, headW: 0.34, headX: 0.49, eyeX: 0.45, eyeY: 0.068 },
       skin: 0x7a6a50, cloth: 0x40221e, eye: 0xffd21f, bar: 0xffc21f, blood: [0.3, 0.05, 0.02], spark: [1, 0.8, 0.2] },
-    brute:  { hp: 420, speed: 1.9, damage: 36, range: 2.6, cooldown: 2.0, windup: 0.6,  score: 400, scale: 1.55, radius: 0.75,
+    brute:  { hp: 420, speed: 1.9, damage: 36, range: 2.6, cooldown: 2.0, windup: 0.6,  score: 400, scale: 1.55, radius: 0.75, react: 0.3,
+      sp: { bodyW: 0.88, headH: 0.115, headW: 0.22, headX: 0.50, eyeX: 0.495, eyeY: 0.055 },
       skin: 0x584868, cloth: 0x1d1b24, eye: 0xc04cff, bar: 0xc04cff, blood: [0.18, 0.04, 0.22], spark: [0.8, 0.3, 1] }
   };
 
@@ -1595,61 +1600,110 @@
   const hbGeo = new THREE.PlaneGeometry(0.9, 0.08);
   const hbBgMat = new THREE.MeshBasicMaterial({ color: 0x07090c, transparent: true, opacity: 0.6, depthWrite: false });
 
+  /* ---- Zombie sprites: the three photo-real zombie images (sprites.js) drawn as upright,
+   *      camera-facing cards. Hit-boxes are invisible boxes (body + head) so headshots still work. */
+  const SPRITE_H = 2.1;              // card height in enemy-local units (root.scale multiplies by def.scale)
+  const EMIS_BASE = 0.26;            // keeps zombies readable in the dark
+  const spriteTexCache = {}, spriteGeoCache = {};
+  const hitMat = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
+  let blobTex = null;
+
+  function getSpriteTex(key) {
+    if (spriteTexCache[key] !== undefined) return spriteTexCache[key];
+    const src = window.ZOMBIE_SPRITES && window.ZOMBIE_SPRITES[key];
+    if (!src) return (spriteTexCache[key] = null);
+    const img = new Image();
+    const tex = new THREE.Texture(img);
+    tex.encoding = THREE.sRGBEncoding;
+    tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+    tex.userData = { aspect: src.w / src.h };
+    img.onload = () => { tex.needsUpdate = true; };
+    img.src = src.data;
+    spriteTexCache[key] = tex;
+    return tex;
+  }
+  Object.keys(ENEMY_TYPES).forEach(getSpriteTex);   // decode up-front
+
+  function getBlobTex() {
+    if (blobTex) return blobTex;
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.55, 'rgba(255,255,255,0.7)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    blobTex = new THREE.CanvasTexture(c);
+    return blobTex;
+  }
+  const blobGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+
   function createEnemy(typeKey) {
-    const def = ENEMY_TYPES[typeKey];
-    const skin = new THREE.MeshStandardMaterial({ color: def.skin, roughness: 0.82, metalness: 0.05 });
-    const cloth = new THREE.MeshStandardMaterial({ color: def.cloth, roughness: 0.95, metalness: 0.0 });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: def.eye });
+    const def = ENEMY_TYPES[typeKey], sp = def.sp;
+    const tex = getSpriteTex(typeKey);
+    const H = SPRITE_H, W = H * (tex ? tex.userData.aspect : 0.45);
+
+    // Lambert so the flashlight / moon still light them; emissive base + emissiveMap keeps detail in the dark.
+    const mat = new THREE.MeshLambertMaterial({ map: tex, color: tex ? 0xffffff : def.skin, transparent: true, alphaTest: 0.35, side: THREE.DoubleSide });
+    if (tex) mat.emissiveMap = tex;
+    mat.emissive.setScalar(EMIS_BASE);
+
+    let geo = spriteGeoCache[typeKey];
+    if (!geo) {
+      geo = new THREE.PlaneGeometry(W, H);
+      geo.translate(0, H / 2, 0);
+      const n = geo.attributes.normal;               // tilt normals up + toward viewer -> even, stable lighting
+      for (let i = 0; i < n.count; i++) n.setXYZ(i, 0, 0.55, 0.835);
+      spriteGeoCache[typeKey] = geo;
+    }
+
     const root = new THREE.Group();
+    root.rotation.order = 'YXZ';   // yaw first, then fall/tilt in the zombie's own frame
     const body = new THREE.Group();
-    root.add(body);
+    const sprite = new THREE.Group();                // pivot at the feet; all animation happens here
+    sprite.rotation.order = 'YXZ';
+    root.add(body); body.add(sprite);
+    const card = new THREE.Mesh(geo, mat);
+    sprite.add(card);
+
     const e = {
-      typeKey, def, root, body, mats: [skin, cloth], hitMeshes: [], state: 'idle',
+      typeKey, def, root, body, sprite, card, mats: [mat], hitMeshes: [], state: 'idle',
       hp: 0, maxHp: 0, speed: 0, damage: 0, timer: 0, flash: 0, flashOn: false, deathT: 0, spawnT: 0,
       phase: Math.random() * TAU, stuckT: 0, sideT: 0, sideDir: 1, lungeT: 0, lungeCd: 0,
-      growlT: rand(2, 6), navT: 0, tx: 0, tz: 0, hasLOS: true, moveSpeed: 0
+      growlT: rand(2, 6), navT: 0, tx: 0, tz: 0, hasLOS: true, moveSpeed: 0,
+      // hit-reaction / animation state
+      shake: 0, shakeT: rand(0, 6), flinch: 0, flinchDir: 1, snap: 0, stagger: 0, strikeT: 0,
+      walkAmt: 0, idleT: rand(0, 6), seed: rand(0, TAU), flip: Math.random() < 0.5 ? -1 : 1,
+      camYaw: 0, dirX: 0, dirZ: 1, deathInit: false, deathHead: false, deathExp: false, deathDur: 0.6
     };
-    const part = (geo, mat, x, y, z, parent) => {
-      const m = new THREE.Mesh(geo, mat);
+
+    // Invisible hit-boxes: body + head (head sits slightly in front so it wins overlaps)
+    const box = (w, h, d, x, y, z, isHead) => {
+      const m = new THREE.Mesh(cachedBox(w, h, d), hitMat);
       m.position.set(x, y, z);
-      (parent || body).add(m);
+      sprite.add(m);
       m.userData.enemy = e;
+      if (isHead) m.userData.head = true;
       e.hitMeshes.push(m);
-      return m;
     };
-    const wide = typeKey === 'brute' ? 1.25 : typeKey === 'runner' ? 0.85 : 1;
-    part(cachedBox(0.5 * wide, 0.28, 0.3), cloth, 0, 0.86, 0);
-    part(cachedBox(0.62 * wide, 0.74, 0.36 * wide), cloth, 0, 1.35, 0);
-    const head = part(cachedBox(0.36, 0.4, 0.36), skin, 0, 1.94, 0.03);
-    head.userData.head = true;
-    const eyeGeo = cachedBox(0.08, 0.045, 0.02);
-    [-0.085, 0.085].forEach((x) => { const m = new THREE.Mesh(eyeGeo, eyeMat); m.position.set(x, 1.98, 0.215); body.add(m); });
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: def.eye, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.9 }));
-    glow.position.set(0, 1.98, 0.27); glow.scale.set(0.6, 0.32, 1);
-    body.add(glow);
-    const limb = (x, y, w, len, mat) => {
-      const pivot = new THREE.Group();
-      pivot.position.set(x, y, 0);
-      body.add(pivot);
-      part(cachedBox(w, len, w * 1.1), mat, 0, -len / 2, 0, pivot);
-      return pivot;
-    };
-    e.legL = limb(-0.14 * wide, 0.78, 0.2 * wide, 0.78, cloth);
-    e.legR = limb(0.14 * wide, 0.78, 0.2 * wide, 0.78, cloth);
-    e.armL = limb(-0.41 * wide, 1.64, 0.16 * wide, 0.76, skin);
-    e.armR = limb(0.41 * wide, 1.64, 0.16 * wide, 0.76, skin);
-    if (typeKey === 'brute') {
-      [-1, 1].forEach((s) => {
-        part(cachedBox(0.36, 0.24, 0.44), cloth, s * 0.52, 1.74, 0);
-        for (let k = 0; k < 3; k++) {
-          const sp = new THREE.Mesh(spikeGeo, eyeMat);
-          sp.position.set(s * 0.52, 1.92, -0.14 + k * 0.14);
-          sp.rotation.z = -s * 0.4;
-          body.add(sp);
-        }
-      });
-    }
+    const bodyH = H * (1 - sp.headH);
+    box(W * sp.bodyW, bodyH, 0.34, 0, bodyH / 2, 0, false);
+    const hh = H * sp.headH * 1.05;
+    box(W * sp.headW, hh, 0.3, (sp.headX - 0.5) * W, H - hh / 2, 0.04, true);
+
+    // Eye glow
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: def.eye, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 }));
+    glow.position.set((sp.eyeX - 0.5) * W, H * (1 - sp.eyeY), 0.08);
+    glow.scale.set(W * sp.headW * 1.3, W * sp.headW * 0.7, 1);
+    sprite.add(glow);
+
     root.scale.setScalar(def.scale);
+
+    // Soft contact shadow / blood pool on the ground
+    const blob = new THREE.Mesh(blobGeo, new THREE.MeshBasicMaterial({ map: getBlobTex(), color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    blob.userData.base = Math.max(1.1, W * 1.15);
+    blob.visible = false;
+    blob.renderOrder = 1;
+    scene.add(blob);
+    e.blob = blob;
 
     const hb = new THREE.Group();
     const bg = new THREE.Mesh(hbGeo, hbBgMat);
@@ -1668,7 +1722,7 @@
   }
 
   function setEmissive(e, f) {
-    for (const m of e.mats) m.emissive.setScalar(f);
+    for (const m of e.mats) m.emissive.setRGB(EMIS_BASE + f, EMIS_BASE + f * 0.35, EMIS_BASE + f * 0.3);
     e.flashOn = f > 0;
   }
 
@@ -1682,6 +1736,10 @@
     e.state = 'spawn'; e.spawnT = 0; e.deathT = 0; e.flash = 0; e.timer = 0;
     e.sideT = 0; e.stuckT = 0; e.lungeT = 0; e.lungeCd = rand(1, 3); e.navT = 0; e.tx = player.pos.x; e.tz = player.pos.z;
     setEmissive(e, 0);
+    e.shake = 0; e.flinch = 0; e.snap = 0; e.stagger = 0; e.strikeT = 0; e.walkAmt = 0; e.deathInit = false;
+    e.mats[0].opacity = 1;
+    e.sprite.position.set(0, 0, 0); e.sprite.rotation.set(0, 0, 0); e.sprite.scale.set(e.flip, 1, 1);
+    e.blob.material.color.setHex(0x000000); e.blob.material.opacity = 0.5; e.blob.visible = true;
     e.root.position.set(x, -2.2 * def.scale, z);
     e.root.rotation.set(0, Math.atan2(player.pos.x - x, player.pos.z - z), 0);
     e.body.rotation.set(0, 0, 0); e.body.position.set(0, 0, 0);
@@ -1696,7 +1754,7 @@
   function releaseEnemy(e) {
     const i = enemies.indexOf(e);
     if (i >= 0) { enemies[i] = enemies[enemies.length - 1]; enemies.pop(); }
-    e.root.visible = false; e.hb.visible = false; e.state = 'idle';
+    e.root.visible = false; e.hb.visible = false; e.blob.visible = false; e.state = 'idle';
     enemyPools[e.typeKey].push(e);
     rayDirty = true;
   }
@@ -1716,6 +1774,18 @@
     e.hbFill.scale.x = Math.max(0.001, frac);
     e.hbFill.position.x = -(1 - frac) * 0.45;
     fxBlood(point, dir, e.def);
+    // Hit reaction: shake, flinch away from the impact side, head-snap on headshots, brief stagger
+    const R = e.def.react;
+    e.shake = Math.min(1, e.shake + (isHead ? 0.85 : 0.5) * R);
+    e.flinch = Math.min(1.5, e.flinch + (isHead ? 1.0 : 0.6) * R);
+    if (isHead) e.snap = Math.min(1.2, e.snap + 0.9 * R);
+    const cyw = Math.cos(e.camYaw), syw = Math.sin(e.camYaw);
+    e.flinchDir = ((point.x - e.root.position.x) * cyw - (point.z - e.root.position.z) * syw) > 0 ? -1 : 1;
+    if (R >= 0.5) {
+      e.stagger = Math.max(e.stagger, isHead ? 0.3 : 0.12);
+      if (isHead && e.state === 'windup') { e.state = 'recover'; e.timer = 0.6; }   // headshot interrupts the swing
+    }
+    e.dirX = dir.x; e.dirZ = dir.z;
     const prev = pendingNumbers.get(e);
     if (prev) { prev.amt += amount; prev.head = prev.head || isHead; }
     else pendingNumbers.set(e, { amt: amount, head: isHead });
@@ -1730,6 +1800,8 @@
 
   function killEnemy(e, isHead, explosive) {
     e.state = 'dying'; e.deathT = 0; e.hb.visible = false;
+    e.deathHead = !!isHead; e.deathExp = !!explosive; e.deathInit = false;
+    e.blob.material.color.setHex(0x3a0705);
     rayDirty = true;
     kills++;
     const pts = Math.round(e.def.score * (1 + (wave.n - 1) * 0.1)) + (isHead ? 50 : 0) + (explosive ? 25 : 0);
@@ -1763,6 +1835,58 @@
     if (best) { e.tx = best.x; e.tz = best.z; } else { e.tx = px; e.tz = pz; }
   }
 
+  const GAIT = {
+    walker: { bob: 0.055, roll: 0.055, sway: 0.03, lean: 0.06, squash: 0.012 },
+    runner: { bob: 0.11,  roll: 0.10,  sway: 0.05, lean: 0.14, squash: 0.03 },
+    brute:  { bob: 0.04,  roll: 0.035, sway: 0.02, lean: 0.05, squash: 0.008 }
+  };
+
+  /** Procedural motion for the flat zombie card: shamble/stomp gait, attack lunge, hit shake & flinch. */
+  function animateSprite(e, dt, moveSpeed) {
+    const g = GAIT[e.typeKey], s = e.sprite, def = e.def;
+    e.walkAmt += ((moveSpeed > 0 ? 1 : 0) - e.walkAmt) * Math.min(1, dt * 8);
+    const w = e.walkAmt, p = e.phase;
+    e.idleT += dt;
+    let rotX = g.lean * w;
+    let rotZ = (Math.sin(p) * g.roll + Math.sin(p * 2 + 1.3) * g.roll * 0.3) * w;
+    let offX = Math.cos(p) * g.sway * w;
+    let offY = Math.abs(Math.sin(p)) * g.bob * w;
+    let sc = 1;
+    const scY = 1 + Math.sin(p * 2) * g.squash * w + Math.sin(e.idleT * 2.2 + e.seed) * 0.008;
+
+    if (e.typeKey === 'runner' && e.lungeT > 0) { rotX += 0.22; sc *= 1.05; }     // leaping at you
+    if (e.state === 'windup') {                                                    // rear back before the swing
+      const t = 1 - clamp(e.timer / def.windup, 0, 1);
+      rotX = lerp(rotX, -0.26, t);
+      sc *= 1 + 0.02 * t;
+    }
+    if (e.strikeT > 0) {                                                           // the strike: snap toward the camera
+      e.strikeT -= dt;
+      const k = Math.max(0, e.strikeT / 0.22);
+      rotX += 0.45 * k;
+      sc *= 1 + 0.14 * k;
+      offY -= 0.05 * k;
+    }
+    if (e.shake > 0.001) {                                                         // bullet-impact shudder
+      e.shakeT += dt * 62;
+      offX += Math.sin(e.shakeT) * 0.075 * e.shake;
+      rotZ += Math.sin(e.shakeT * 0.73 + 1) * 0.11 * e.shake;
+      offY += Math.abs(Math.sin(e.shakeT * 0.5)) * 0.03 * e.shake;
+      e.shake *= Math.exp(-dt * 8.5);
+    }
+    if (e.flinch > 0.001) {                                                        // recoil away from the hit
+      rotX -= e.flinch * 0.24;
+      rotZ += e.flinchDir * e.flinch * 0.13;
+      sc *= 1 - e.flinch * 0.02;
+      e.flinch *= Math.exp(-dt * 7);
+    }
+    if (e.snap > 0.001) { rotX -= e.snap * 0.22; e.snap *= Math.exp(-dt * 6); }    // headshot: head snaps back
+
+    s.position.set(offX, offY, 0);
+    s.rotation.set(rotX, angleDiff(e.root.rotation.y, e.camYaw), rotZ);
+    s.scale.set(sc * e.flip, sc * scY, sc);
+  }
+
   function updateEnemies(dt) {
     const px = player.pos.x, pz = player.pos.z;
     for (let i = enemies.length - 1; i >= 0; i--) {
@@ -1771,14 +1895,39 @@
       if (e.flash > 0) { e.flash -= dt; setEmissive(e, Math.max(0, e.flash / 0.12) * 0.9); }
       else if (e.flashOn) setEmissive(e, 0);
 
+      e.camYaw = Math.atan2(camera.position.x - r.position.x, camera.position.z - r.position.z);
+      e.blob.position.set(r.position.x, 0.035, r.position.z);
+
       if (e.state === 'dying') {
+        if (!e.deathInit) {                       // freeze facing, corpse falls straight back from the viewer
+          e.deathInit = true;
+          r.rotation.y = e.camYaw; e.sprite.rotation.set(0, 0, 0); e.sprite.scale.set(e.flip, 1, 1); e.sprite.position.set(0, 0, 0);
+          e.deathDur = e.deathHead ? 0.42 : 0.62;
+        }
         e.deathT += dt;
-        const t = Math.min(1, e.deathT / 0.55);
-        r.rotation.x = -t * t * 1.45;
-        if (e.deathT > 1.0) r.position.y -= dt * 0.8;
-        if (e.deathT > 2.0) releaseEnemy(e);
+        const D = e.deathDur, t = Math.min(1, e.deathT / D);
+        let fall = -Math.pow(t, 1.6) * 1.5;
+        if (e.deathT > D) fall += Math.sin(clamp((e.deathT - D) / 0.18, 0, 1) * Math.PI) * 0.07;   // small bounce on landing
+        r.rotation.x = fall;
+        // knock-back in the direction of the killing shot (brute barely moves, explosions throw)
+        if (t < 1) {
+          const k = (def.react < 0.5 ? 0.5 : 1.6) * (e.deathExp ? 2.6 : 1) * (1 - t) * (1 - t);
+          const dl = Math.hypot(e.dirX, e.dirZ) || 1;
+          r.position.x = clamp(r.position.x + (e.dirX / dl) * k * dt, -WORLD_LIMIT, WORLD_LIMIT);
+          r.position.z = clamp(r.position.z + (e.dirZ / dl) * k * dt, -WORLD_LIMIT, WORLD_LIMIT);
+        }
+        r.position.y = e.deathExp ? Math.sin(t * Math.PI) * 0.6 : 0.03 * t;
+        e.sprite.position.x = Math.sin(e.deathT * 55) * 0.06 * Math.max(0, 1 - e.deathT / 0.9);   // death twitch
+        e.sprite.rotation.z = Math.sin(e.deathT * 38) * 0.05 * Math.max(0, 1 - e.deathT / 0.7);
+        const fade = clamp(1 - (e.deathT - 1.2) / 0.75, 0, 1);
+        e.mats[0].opacity = fade;
+        const pool = def.scale * e.blob.userData.base * (0.8 + 1.5 * Math.min(1, e.deathT / 1.3));   // blood pool spreads
+        e.blob.scale.setScalar(pool);
+        e.blob.material.opacity = 0.75 * fade;
+        if (e.deathT > 1.95) releaseEnemy(e);
         continue;
       }
+      e.blob.scale.setScalar(def.scale * e.blob.userData.base);
 
       const dx = px - r.position.x, dz = pz - r.position.z;
       const dist = Math.hypot(dx, dz) || 0.001;
@@ -1788,7 +1937,10 @@
         const t = Math.min(1, e.spawnT / 0.9);
         r.position.y = -2.2 * def.scale * (1 - t) * (1 - t);
         r.rotation.y += angleDiff(r.rotation.y, Math.atan2(dx, dz)) * Math.min(1, dt * 6);
-        e.armL.rotation.x = e.armR.rotation.x = -2.6 * (1 - t);
+        e.sprite.rotation.y = angleDiff(r.rotation.y, e.camYaw);
+        e.sprite.rotation.x = -0.4 * (1 - t);                       // claws its way up out of the ground
+        e.sprite.position.x = Math.sin(e.spawnT * 42) * 0.05 * (1 - t);
+        e.blob.material.opacity = 0.5 * t;
         if (t >= 1) { r.position.y = 0; e.state = 'chase'; }
         continue;
       }
@@ -1820,13 +1972,15 @@
             addShake(Math.max(0.1, 0.55 - dist * 0.03));
             Sound.slam();
           }
-          e.state = 'recover'; e.timer = def.cooldown;
+          e.state = 'recover'; e.timer = def.cooldown; e.strikeT = 0.22;
         }
       } else if (e.state === 'recover') {
         e.timer -= dt;
         if (dist > def.range) moveSpeed = e.speed * 0.5;
         if (e.timer <= 0) e.state = 'chase';
       }
+
+      if (e.stagger > 0) { e.stagger -= dt; moveSpeed *= 0.2; }     // hit -> stumble
 
       // Steering: toward nav target + separation + unstick sidestep
       if (moveSpeed > 0) {
@@ -1874,18 +2028,7 @@
       const pdx = r.position.x - px, pdz = r.position.z - pz, pd = Math.hypot(pdx, pdz);
       if (pd < minP && pd > 1e-4) { r.position.x = px + (pdx / pd) * minP; r.position.z = pz + (pdz / pd) * minP; }
 
-      // Procedural animation
-      const swing = moveSpeed > 0 ? Math.sin(e.phase) : 0;
-      e.legL.rotation.x = swing * 0.7;
-      e.legR.rotation.x = -swing * 0.7;
-      const baseArm = e.typeKey === 'brute' ? -0.35 : -1.25;
-      let armX = baseArm + swing * 0.15;
-      if (e.state === 'windup') armX = lerp(baseArm, -2.8, 1 - e.timer / def.windup);
-      else if (e.state === 'recover') armX = lerp(-2.8, baseArm + 0.3, Math.min(1, (def.cooldown - e.timer) / 0.15));
-      e.armL.rotation.x = armX + (e.state === 'chase' ? swing * 0.2 : 0);
-      e.armR.rotation.x = armX - (e.state === 'chase' ? swing * 0.2 : 0);
-      e.body.rotation.x = e.typeKey === 'runner' ? 0.3 : e.state === 'windup' ? -0.12 : 0.05;
-      e.body.position.y = Math.abs(Math.sin(e.phase)) * 0.06;
+      animateSprite(e, dt, moveSpeed);
 
       if (e.hb.visible) {
         e.hb.position.set(r.position.x, r.position.y + 2.4 * def.scale, r.position.z);
