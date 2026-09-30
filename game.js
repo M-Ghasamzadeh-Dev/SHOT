@@ -81,23 +81,23 @@
 
   /** Shop catalogue. Prices are in score points (edit freely). */
   const SHOP_WEAPONS = {
-    smg:     { price: 2500, desc: 'سریع و روان؛ برای شلوغی' },
-    shotgun: { price: 3500, desc: 'نزدیک‌کش؛ ۹ ساچمه تو هر شلیک' },
-    rifle:   { price: 5500, desc: 'قدرت و برد خوب، خشاب بزرگ' },
-    sniper:  { price: 70000, desc: 'یه تیر یه زامبی؛ زوم داره' }
+    smg:     { price: 3500, desc: 'سریع و روان؛ برای شلوغی' },
+    shotgun: { price: 4500, desc: 'نزدیک‌کش؛ ۹ ساچمه تو هر شلیک' },
+    rifle:   { price: 7500, desc: 'قدرت و برد خوب، خشاب بزرگ' },
+    sniper:  { price: 10000, desc: 'یه تیر یه زامبی؛ زوم داره' }
   };
   const SHOP_AMMO = {           // n = bullets per pack
-    pistol:  { n: 24, price: 200 },
-    smg:     { n: 64, price: 500 },
-    rifle:   { n: 60, price: 600 },
-    shotgun: { n: 12, price: 600 },
-    sniper:  { n: 5,  price: 500 }
+    pistol:  { n: 24, price: 300 },
+    smg:     { n: 64, price: 600 },
+    rifle:   { n: 60, price: 800 },
+    shotgun: { n: 12, price: 700 },
+    sniper:  { n: 5,  price: 1000 }
   };
   const SHOP_GEAR = [
-    { id: 'medkit', name: 'کیت درمان', desc: '+۶۰ جان', price: 800 },
+    { id: 'medkit', name: 'کیت درمان', desc: '+۶۰ جان', price: 1200 },
     { id: 'armor1', name: 'جلیقه‌ی سبک', desc: '+۴۰ زره', price: 1500 },
-    { id: 'armor2', name: 'زره سنگین', desc: 'زره کامل ۱۰۰', price: 2000 },
-    { id: 'grenade', name: 'بمب دستی', desc: '+۲ عدد  ·  انفجار تو محدوده', price: 1000 }
+    { id: 'armor2', name: 'زره سنگین', desc: 'زره کامل ۱۰۰', price: 3000 },
+    { id: 'grenade', name: 'بمب دستی', desc: '+۲ عدد  ·  انفجار تو محدوده', price: 1500 }
   ];
   const MAX_GRENADES = 6, GRENADE_FUSE = 2.1;
   const MAX_ARMOR = 100, ARMOR_ABSORB = 0.65;
@@ -584,7 +584,7 @@
   // Weapon scene lights
   weaponScene.add(new THREE.AmbientLight(0x8898b0, 1.0));
   const wKey = new THREE.DirectionalLight(0xffffff, 1.1); wKey.position.set(1, 2, 1.5); weaponScene.add(wKey);
-  const wRim = new THREE.DirectionalLight(NEON, 0.55); wRim.position.set(-1.5, 0.4, -1); weaponScene.add(wRim);
+  const wRim = new THREE.DirectionalLight(0xffffff, 0.3); wRim.position.set(-1.5, 0.4, -1); weaponScene.add(wRim);
   const vmFlashLight = new THREE.PointLight(0xffb060, 0, 2.5, 2);
   weaponScene.add(vmFlashLight);
 
@@ -1387,7 +1387,7 @@
     dark: new THREE.MeshStandardMaterial({ color: 0x2a2e33, metalness: 0.2, roughness: 0.6 }),
     grip: new THREE.MeshStandardMaterial({ color: 0x24201c, metalness: 0.1, roughness: 0.9 }),
     wood: new THREE.MeshStandardMaterial({ color: 0x4a2f1c, metalness: 0.05, roughness: 0.75 }),
-    accent: new THREE.MeshStandardMaterial({ color: 0x0c120c, emissive: NEON, emissiveIntensity: 0.9 })
+    accent: new THREE.MeshStandardMaterial({ color: 0x15181b, metalness: 0.5, roughness: 0.5 })
   };
   function vbox(parent, w, h, d, mat, x, y, z, rx) {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -1412,19 +1412,48 @@
     g.userData.base = new THREE.Vector3(0.2, -0.2, -0.46);
     return g;
   }
+  /** Kalash = real AK-47 look: the photo skin is mapped on both sides of the gun, with a dark core for thickness. */
+  const akTex = {};
+  function getAkTex(side) {
+    if (akTex[side] !== undefined) return akTex[side];
+    const src = window.AK_SKIN && window.AK_SKIN[side];
+    if (!src) return (akTex[side] = null);
+    const img = new Image(), tex = new THREE.Texture(img);
+    tex.encoding = THREE.sRGBEncoding;
+    tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+    img.onload = () => { tex.needsUpdate = true; };
+    img.src = src;
+    return (akTex[side] = tex);
+  }
   function buildRifle() {
     const g = new THREE.Group();
-    vbox(g, 0.08, 0.11, 0.42, gm.metal, 0, 0, 0);
-    vbox(g, 0.088, 0.085, 0.26, gm.dark, 0, -0.005, -0.3);
-    vbox(g, 0.092, 0.01, 0.22, gm.accent, 0, 0.012, -0.3);
-    vcyl(g, 0.017, 0.3, gm.dark, 0, 0.01, -0.56);
-    vcyl(g, 0.026, 0.06, gm.metal, 0, 0.01, -0.72);
-    vbox(g, 0.05, 0.19, 0.085, gm.dark, 0, -0.14, -0.06, 0.25);
-    vbox(g, 0.065, 0.11, 0.24, gm.dark, 0, -0.02, 0.3);
-    vbox(g, 0.05, 0.13, 0.06, gm.grip, 0, -0.11, 0.12, 0.35);
-    vbox(g, 0.035, 0.045, 0.14, gm.dark, 0, 0.08, -0.02);
-    vbox(g, 0.03, 0.014, 0.03, gm.accent, 0, 0.108, -0.02);
-    g.userData.muzzle = new THREE.Vector3(0, 0.01, -0.76);
+    const tr = getAkTex('r'), tl = getAkTex('l');
+    if (!tr || !tl) {                               // fallback: old primitive rifle if the skin file is missing
+      vbox(g, 0.08, 0.11, 0.42, gm.metal, 0, 0, 0);
+      vbox(g, 0.088, 0.085, 0.26, gm.dark, 0, -0.005, -0.3);
+      vcyl(g, 0.017, 0.3, gm.dark, 0, 0.01, -0.56);
+      vbox(g, 0.05, 0.19, 0.085, gm.dark, 0, -0.14, -0.06, 0.25);
+      vbox(g, 0.065, 0.11, 0.24, gm.dark, 0, -0.02, 0.3);
+      vbox(g, 0.05, 0.13, 0.06, gm.grip, 0, -0.11, 0.12, 0.35);
+    } else {
+      const L = 1.05, H = L * 308 / 1024, cy = -0.0988, cz = -0.215;
+      const mk = (tex, rotY, x) => {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(L, H),
+          new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.4, color: 0xd8d8d8 }));
+        m.rotation.y = rotY; m.position.set(x, cy, cz); g.add(m);
+      };
+      mk(tr, Math.PI / 2, 0.013);                  // right side (charging handle side), muzzle toward -z
+      mk(tl, -Math.PI / 2, -0.013);                // left side
+      const steel = new THREE.MeshStandardMaterial({ color: 0x1a1b1d, metalness: 0.5, roughness: 0.6 });
+      const wood = new THREE.MeshStandardMaterial({ color: 0x4f2815, metalness: 0.0, roughness: 0.8 });
+      vbox(g, 0.024, 0.078, 0.29, steel, 0, 0.0, -0.132);      // receiver
+      vbox(g, 0.026, 0.065, 0.17, wood, 0, 0.006, -0.37);      // handguard
+      vbox(g, 0.024, 0.078, 0.28, wood, 0, -0.045, 0.17);      // stock
+      vbox(g, 0.022, 0.1, 0.05, wood, 0, -0.085, 0.05, 0.3);   // pistol grip
+      vbox(g, 0.022, 0.15, 0.05, steel, 0, -0.12, -0.11, 0.35);// magazine
+      vcyl(g, 0.009, 0.3, steel, 0, 0.01, -0.59);              // barrel
+    }
+    g.userData.muzzle = new THREE.Vector3(0, 0.01, -0.75);
     g.userData.base = new THREE.Vector3(0.22, -0.22, -0.42);
     return g;
   }
@@ -1470,13 +1499,63 @@
   const gunModels = [buildPistol(), buildSmg(), buildRifle(), buildShotgun(), buildSniper()];
   gunModels.forEach((g) => { g.visible = false; vmRoot.add(g); });
 
+  // ---- First-person hands: gloved hands + sleeved forearms holding every gun (realistic, not neon)
+  const hm = {
+    glove: new THREE.MeshStandardMaterial({ color: 0x1c1b19, metalness: 0.0, roughness: 0.95 }),
+    sleeve: new THREE.MeshStandardMaterial({ color: 0x4a5040, metalness: 0.0, roughness: 1.0 }),
+    cuff: new THREE.MeshStandardMaterial({ color: 0x2a2a27, metalness: 0.0, roughness: 0.9 })
+  };
+  function limb(parent, a, b, rA, rB, mat) {
+    const dir = b.clone().sub(a), len = dir.length();
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rB, rA, len, 12), mat);
+    m.position.copy(a).addScaledVector(dir, 0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    parent.add(m); return m;
+  }
+  function addHands(g, cfg) {
+    const h = new THREE.Group(); h.userData.isHands = true;
+    const V = (x, y, z) => new THREE.Vector3(x, y, z);
+    if (cfg.r) {                                   // trigger hand: wraps the pistol grip
+      const R = cfg.r;
+      vbox(h, 0.07, 0.085, 0.07, hm.glove, R.x, R.y, R.z + 0.005, 0.22);      // palm
+      vbox(h, 0.074, 0.07, 0.034, hm.glove, R.x, R.y + 0.005, R.z - 0.048, 0.22); // curled fingers
+      vbox(h, 0.024, 0.03, 0.07, hm.glove, R.x - 0.042, R.y + 0.032, R.z - 0.012); // thumb
+      vbox(h, 0.02, 0.02, 0.05, hm.glove, R.x + 0.005, R.y + 0.05, R.z - 0.055);   // trigger finger
+      const w = V(R.x + 0.006, R.y - 0.05, R.z + 0.055);
+      const e = V(R.x + 0.13, R.y - 0.34, R.z + 0.55);
+      const c = V(R.x + 0.03, R.y - 0.13, R.z + 0.14);
+      limb(h, w, c, 0.03, 0.034, hm.cuff);
+      limb(h, c, e, 0.034, 0.052, hm.sleeve);
+    }
+    if (cfg.l) {                                   // support hand: cups the handguard / pump from below
+      const L = cfg.l;
+      vbox(h, 0.086, 0.04, 0.095, hm.glove, L.x, L.y - 0.048, L.z);           // palm under the gun
+      vbox(h, 0.022, 0.075, 0.085, hm.glove, L.x + 0.05, L.y - 0.008, L.z - 0.005); // fingers on far side
+      vbox(h, 0.022, 0.03, 0.075, hm.glove, L.x - 0.047, L.y + 0.022, L.z - 0.012); // thumb on top
+      const w = V(L.x - 0.015, L.y - 0.06, L.z + 0.06);
+      const c = V(L.x - 0.07, L.y - 0.13, L.z + 0.18);
+      const e = V(L.x - 0.36, L.y - 0.36, L.z + 0.6);
+      limb(h, w, c, 0.032, 0.036, hm.cuff);
+      limb(h, c, e, 0.036, 0.054, hm.sleeve);
+    }
+    g.add(h);
+  }
+  const HAND_CFG = [
+    { r: { x: 0, y: -0.105, z: 0.075 } },                                                     // pistol (one hand)
+    { r: { x: 0, y: -0.1, z: 0.145 }, l: { x: 0, y: -0.03, z: -0.2 } },                       // smg
+    { r: { x: 0, y: -0.075, z: 0.055 }, l: { x: 0, y: -0.005, z: -0.27 } },                    // rifle (AK)
+    { r: { x: 0, y: -0.03, z: 0.13 }, l: { x: 0, y: 0.0, z: -0.33 } },                        // shotgun (pump hand)
+    { r: { x: 0, y: -0.095, z: 0.125 }, l: { x: 0, y: -0.0, z: -0.3 } }                       // sniper
+  ];
+  gunModels.forEach((g, i) => addHands(g, HAND_CFG[i]));
+
   /** One signature finish per weapon (not purchasable): each gun keeps its own look in hand and in the shop. */
   const SKINS = [
-    { name: 'فولاد و نئون',   metal: 0x9aa2ac, dark: 0x2a2e33, grip: 0x1f1c19, wood: 0x4a2f1c, accent: NEON,     mt: 0.75, rg: 0.28 },
-    { name: 'مشکی و نارنجی',  metal: 0x2f3237, dark: 0x121416, grip: 0x101010, wood: 0x222222, accent: 0xff7a1a, mt: 0.55, rg: 0.4 },
-    { name: 'شنی بیابانی',    metal: 0xb59d6c, dark: 0x6f603c, grip: 0x3d3524, wood: 0x6f603c, accent: 0xffd25a, mt: 0.35, rg: 0.55 },
-    { name: 'گردو و برنج',    metal: 0x1e2328, dark: 0x101214, grip: 0x1a1410, wood: 0x8a5230, accent: 0xd9a441, mt: 0.7,  rg: 0.35 },
-    { name: 'مات قطبی',       metal: 0xd0d5da, dark: 0x8d949b, grip: 0x2a2d30, wood: 0x8d949b, accent: 0xff3b3b, mt: 0.3,  rg: 0.5 }
+    { name: 'فولاد مات',      metal: 0x6d7378, dark: 0x25282b, grip: 0x1a1816, wood: 0x4a2f1c, accent: 0x15181b, mt: 0.65, rg: 0.4 },
+    { name: 'مشکی تاکتیکال',  metal: 0x2b2e32, dark: 0x111315, grip: 0x101010, wood: 0x222222, accent: 0x0c0d0e, mt: 0.5,  rg: 0.45 },
+    { name: 'AK-47 چوب و فولاد', metal: 0x7c705a, dark: 0x4f4634, grip: 0x2e2a20, wood: 0x4f4634, accent: 0x2a271e, mt: 0.3,  rg: 0.6 },
+    { name: 'گردو و فولاد',   metal: 0x23282d, dark: 0x121416, grip: 0x1a1410, wood: 0x6b4126, accent: 0x14100c, mt: 0.65, rg: 0.4 },
+    { name: 'سبز نظامی',      metal: 0x3a4236, dark: 0x1e231d, grip: 0x1a1d18, wood: 0x2d3529, accent: 0x111410, mt: 0.4,  rg: 0.55 }
   ];
   gunModels.forEach((g, i) => {
     const sk = SKINS[i], cache = new Map();
@@ -1486,7 +1565,7 @@
       if (!key) return;
       if (!cache.has(key)) {
         const m = gm[key].clone();
-        if (key === 'accent') m.emissive.setHex(sk.accent);
+        if (key === 'accent') { m.color.setHex(sk.accent); }
         else { m.color.setHex(sk[key]); if (key === 'metal') { m.metalness = sk.mt; m.roughness = sk.rg; } }
         cache.set(key, m);
       }
@@ -1728,11 +1807,11 @@
     const sc = new THREE.Scene();
     sc.add(new THREE.HemisphereLight(0xdfe8ff, 0x332a22, 1.2));
     const key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(2, 3, 4); sc.add(key);
-    const rim = new THREE.DirectionalLight(0x9dff5a, 0.6); rim.position.set(-3, 1, -2); sc.add(rim);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.35); rim.position.set(-3, 1, -2); sc.add(rim);
     const cam = new THREE.PerspectiveCamera(30, 2, 0.1, 30); cam.position.set(0, 0.15, 4.4);
     const holders = gunModels.map((g) => {
       const c = g.clone(true), junk = [];
-      c.traverse((o) => { if (o.isSprite || o.isLight) junk.push(o); o.visible = true; });
+      c.traverse((o) => { if (o.isSprite || o.isLight || (o.userData && o.userData.isHands)) junk.push(o); o.visible = true; });
       junk.forEach((o) => o.parent && o.parent.remove(o));
       c.position.set(0, 0, 0); c.rotation.set(0, 0, 0); c.scale.set(1, 1, 1);
       const box = new THREE.Box3().setFromObject(c), size = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
@@ -1756,7 +1835,7 @@
     if (w !== pv.w || h !== pv.h) { pv.w = w; pv.h = h; pv.r.setSize(w, h, false); pv.cam.aspect = w / h; pv.cam.updateProjectionMatrix(); }
     pv.t += dt;
     const g = pv.holders[pv.sel];
-    g.rotation.y = -Math.PI / 2 + Math.sin(pv.t * 0.7) * 0.85;      // slow turn so every side of the finish is visible
+    g.rotation.y = -Math.PI / 2 + Math.sin(pv.t * 0.7) * (pv.sel === 2 ? 0.35 : 0.85);      // slow turn so every side of the finish is visible
     g.rotation.x = Math.sin(pv.t * 0.5) * 0.08;
     pv.r.render(pv.sc, pv.cam);
   }
@@ -1940,7 +2019,7 @@
     if (player.running && reloadT <= 0) { rotY += 0.35; rotZ += 0.18; y -= 0.03; }
     if (!player.grounded) y += clamp(player.velY * 0.004, -0.03, 0.03);
     vmRoot.position.set(base.x + bx - vm.swayX, base.y + by + y + vm.swayY, base.z + vm.kick * 0.5);
-    vmRoot.rotation.set(vm.kick * 1.3 + rotX, rotY, rotZ);
+    vmRoot.rotation.set(vm.kick * 1.3 + rotX + 0.02, rotY + 0.045, rotZ - 0.02);
 
     flashT -= dt;
     const on = flashT > 0;
