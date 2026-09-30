@@ -81,23 +81,23 @@
 
   /** Shop catalogue. Prices are in score points (edit freely). */
   const SHOP_WEAPONS = {
-    smg:     { price: 3500, desc: 'سریع و روان؛ برای شلوغی' },
-    shotgun: { price: 4500, desc: 'نزدیک‌کش؛ ۹ ساچمه تو هر شلیک' },
-    rifle:   { price: 7500, desc: 'قدرت و برد خوب، خشاب بزرگ' },
-    sniper:  { price: 10000, desc: 'یه تیر یه زامبی؛ زوم داره' }
+    smg:     { price: 2500, desc: 'سریع و روان؛ برای شلوغی' },
+    shotgun: { price: 3500, desc: 'نزدیک‌کش؛ ۹ ساچمه تو هر شلیک' },
+    rifle:   { price: 5500, desc: 'قدرت و برد خوب، خشاب بزرگ' },
+    sniper:  { price: 70000, desc: 'یه تیر یه زامبی؛ زوم داره' }
   };
   const SHOP_AMMO = {           // n = bullets per pack
-    pistol:  { n: 24, price: 300 },
-    smg:     { n: 64, price: 600 },
-    rifle:   { n: 60, price: 800 },
-    shotgun: { n: 12, price: 700 },
-    sniper:  { n: 5,  price: 1000 }
+    pistol:  { n: 24, price: 200 },
+    smg:     { n: 64, price: 500 },
+    rifle:   { n: 60, price: 600 },
+    shotgun: { n: 12, price: 600 },
+    sniper:  { n: 5,  price: 500 }
   };
   const SHOP_GEAR = [
-    { id: 'medkit', name: 'کیت درمان', desc: '+۶۰ جان', price: 1200 },
+    { id: 'medkit', name: 'کیت درمان', desc: '+۶۰ جان', price: 800 },
     { id: 'armor1', name: 'جلیقه‌ی سبک', desc: '+۴۰ زره', price: 1500 },
-    { id: 'armor2', name: 'زره سنگین', desc: 'زره کامل ۱۰۰', price: 3000 },
-    { id: 'grenade', name: 'بمب دستی', desc: '+۲ عدد  ·  انفجار تو محدوده', price: 1500 }
+    { id: 'armor2', name: 'زره سنگین', desc: 'زره کامل ۱۰۰', price: 2000 },
+    { id: 'grenade', name: 'بمب دستی', desc: '+۲ عدد  ·  انفجار تو محدوده', price: 1000 }
   ];
   const MAX_GRENADES = 6, GRENADE_FUSE = 2.1;
   const MAX_ARMOR = 100, ARMOR_ABSORB = 0.65;
