@@ -565,3 +565,56 @@ body.layout-edit .ammo-box { z-index: 5; }
 .lay-actions { display: flex; gap: 8px; }
 .lay-actions .menu-btn { flex: 1; justify-content: center; text-align: center; padding: 8px 12px; font-size: 13px; }
 @media (orientation: portrait) { #layout-bar { top: 42%; transform: translate(-50%, -50%); } }
+
+
+/* ---- Armor bar ---- */
+.armor-row { margin-top: 6px; }
+.armor-row .hp-label { color: oklch(0.8 0.1 235); }
+.armor-row .hp-bar { height: 6px; }
+#armor-fill { position: absolute; inset: 0; transform-origin: left center; transform: scaleX(0); border-radius: inherit; background: oklch(0.78 0.12 235); box-shadow: 0 0 8px oklch(0.78 0.12 235 / 0.5); transition: transform 0.25s var(--ease-out); }
+.armor-row #armor-text { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 28px; text-align: right; }
+.armor-row.empty { opacity: 0.4; }
+#weapon-slots i.off { opacity: 0.25; background: oklch(1 0 0 / 0.1); }
+
+/* ---- Shop ---- */
+#btn-shop {
+  position: absolute; left: 50%; bottom: calc(var(--safe-b) + var(--pad) + 74px); transform: translateX(-50%);
+  z-index: 8; pointer-events: auto; touch-action: none;
+  padding: 11px 24px; border-radius: 999px; font-size: 15px; font-weight: 800; letter-spacing: 0.04em; color: oklch(0.18 0.03 135);
+  background: var(--neon); border: 0; box-shadow: 0 0 22px var(--neon-glow), 0 6px 18px oklch(0 0 0 / 0.5);
+  animation: shopPulse 1.6s ease-in-out infinite;
+}
+#btn-shop.hidden { display: none; }
+#btn-shop.pressed { transform: translateX(-50%) scale(0.96); }
+@keyframes shopPulse { 0%, 100% { box-shadow: 0 0 14px var(--neon-glow), 0 6px 18px oklch(0 0 0 / 0.5); } 50% { box-shadow: 0 0 30px var(--neon-glow), 0 6px 18px oklch(0 0 0 / 0.5); } }
+.sheet.shop { max-height: 100%; }
+.shop-wallet { font-size: 13px; color: var(--muted); }
+.shop-wallet b { font-size: 20px; color: var(--amber); margin-right: 6px; font-variant-numeric: tabular-nums; }
+.shop-msg { padding: 8px 22px; font-size: 12px; color: var(--neon); border-bottom: 1px solid var(--edge); min-height: 34px; }
+#shop-body h3 { font-size: 12px; letter-spacing: 0.1em; color: var(--muted); margin: 16px 0 6px; font-weight: 700; }
+.shop-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 0; border-bottom: 1px solid oklch(1 0 0 / 0.06); }
+.si-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.si-info b { font-size: 14px; }
+.si-info small { font-size: 11px; color: var(--faint); }
+.si-buy { flex: none; min-width: 84px; padding: 9px 14px; border-radius: 10px; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; color: oklch(0.18 0.03 135); background: var(--neon); }
+.si-buy:disabled { background: oklch(1 0 0 / 0.1); color: var(--muted); }
+.shop-item.poor .si-buy { color: var(--danger); }
+.si-tag { flex: none; min-width: 84px; text-align: center; font-size: 12px; font-weight: 700; color: var(--neon); }
+.shop-item.full .si-tag { color: var(--muted); }
+.shop-item.owned .si-info b { color: var(--muted); }
+
+
+/* ---- Grenade ---- */
+#btn-grenade { right: calc(var(--fire) + var(--btn) + 4vmin); bottom: calc(var(--fire) * 0.05 + var(--btn) * 0.85 + 2.4vmin); width: calc(var(--btn) * 0.85); height: calc(var(--btn) * 0.85); }
+#btn-grenade svg { fill: none; stroke: var(--ink); }
+#btn-grenade::after { content: attr(data-n); position: absolute; top: -3px; left: -3px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; display: grid; place-items: center; font-size: 11px; font-weight: 800; background: var(--amber); color: oklch(0.2 0.03 75); }
+#btn-grenade.empty { opacity: 0.45; }
+.gren-line { font-size: 10px; letter-spacing: 0.1em; color: var(--muted); margin-top: 2px; }
+.gren-line b { color: var(--amber); font-size: 12px; margin-right: 3px; }
+
+.shop-view { position: relative; height: 150px; flex: none; border-bottom: 1px solid var(--edge); background: radial-gradient(ellipse at 50% 60%, oklch(0.3 0.03 140 / 0.35), transparent 70%); }
+.shop-view canvas { width: 100%; height: 100%; display: block; }
+.sv-name { position: absolute; right: 18px; bottom: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.sv-name b { font-size: 15px; }
+.sv-name small { font-size: 11px; color: var(--neon); }
+.shop-item[data-view] { cursor: pointer; }

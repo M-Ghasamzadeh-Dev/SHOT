@@ -79,6 +79,29 @@
       reload: 3.0, spread: 0.0015, pellets: 1, range: 220, recoil: 0.09, kick: 0.2, shake: 0.3, tracer: 0xfff2c0, flash: 0.5, gap: 14 }
   ];
 
+  /** Shop catalogue. Prices are in score points (edit freely). */
+  const SHOP_WEAPONS = {
+    smg:     { price: 3500, desc: 'سریع و روان؛ برای شلوغی' },
+    shotgun: { price: 4500, desc: 'نزدیک‌کش؛ ۹ ساچمه تو هر شلیک' },
+    rifle:   { price: 7500, desc: 'قدرت و برد خوب، خشاب بزرگ' },
+    sniper:  { price: 10000, desc: 'یه تیر یه زامبی؛ زوم داره' }
+  };
+  const SHOP_AMMO = {           // n = bullets per pack
+    pistol:  { n: 24, price: 300 },
+    smg:     { n: 64, price: 600 },
+    rifle:   { n: 60, price: 800 },
+    shotgun: { n: 12, price: 700 },
+    sniper:  { n: 5,  price: 1000 }
+  };
+  const SHOP_GEAR = [
+    { id: 'medkit', name: 'کیت درمان', desc: '+۶۰ جان', price: 1200 },
+    { id: 'armor1', name: 'جلیقه‌ی سبک', desc: '+۴۰ زره', price: 1500 },
+    { id: 'armor2', name: 'زره سنگین', desc: 'زره کامل ۱۰۰', price: 3000 },
+    { id: 'grenade', name: 'بمب دستی', desc: '+۲ عدد  ·  انفجار تو محدوده', price: 1500 }
+  ];
+  const MAX_GRENADES = 6, GRENADE_FUSE = 2.1;
+  const MAX_ARMOR = 100, ARMOR_ABSORB = 0.65;
+
   /** Enemy archetypes. Wave multipliers scale hp / damage / speed on top of these. */
   const ENEMY_TYPES = {
     // `sp` = sprite hit-box layout (fractions of the sprite): body width, head height/width/x, eye position.
@@ -552,6 +575,7 @@
   }
   const fireLight = new THREE.PointLight(0xff6a20, 0, 18, 2); scene.add(fireLight);
   const muzzleLight = new THREE.PointLight(0xffc070, 0, 14, 2); scene.add(muzzleLight);
+  const shopLight = new THREE.PointLight(0xffc890, 2.2, 17, 2); shopLight.position.set(0, 2.9, 6.3); scene.add(shopLight);
   const explosionLight = new THREE.PointLight(0xff8a30, 0, 32, 2); scene.add(explosionLight);
   // Player flashlight: a soft cone that follows the view (no shadows, cheap)
   const flashlight = new THREE.SpotLight(0xdfe6ff, 0, 32, 0.5, 0.55, 1.5);
@@ -697,6 +721,21 @@
         const sy = 3 + ((rng() * (h - 4) / 3) | 0) * 3;
         props.push(placed(new THREE.BoxGeometry(w * 0.6, 0.25, 1.2), x + (rng() - 0.5) * w * 0.3, sy, z + side * (d / 2 + 0.5), 0, 0, (rng() - 0.5) * 0.3, 0x4a4945));
       }
+      if (!collapsed && h > 12) {
+        // fire escape: stacked landings + rails on one facade, plus a rooftop water tank and dangling rebar
+        const side = rng() < 0.5 ? 1 : -1, fx = x + (rng() - 0.5) * w * 0.5;
+        for (let fy = 3.2; fy < Math.min(h - 1, 26); fy += 3.4) {
+          props.push(placed(new THREE.BoxGeometry(1.8, 0.08, 0.9), fx, fy, z + side * (d / 2 + 0.45), 0, 0, 0, 0x2a2622));
+          props.push(placed(new THREE.BoxGeometry(1.8, 0.7, 0.04), fx, fy + 0.4, z + side * (d / 2 + 0.88), 0, 0, 0, 0x22201e));
+          props.push(placed(new THREE.BoxGeometry(0.1, 3.4, 0.05), fx + 0.8, fy + 1.6, z + side * (d / 2 + 0.6), 0, 0, 0.5 * side, 0x22201e));
+        }
+        if (rng() < 0.5) {
+          const tx = x + (rng() - 0.5) * (w - 3), tz = z + (rng() - 0.5) * (d - 3);
+          props.push(placed(new THREE.CylinderGeometry(1.1, 1.1, 1.8, 10), tx, h + 2, tz, 0, 0, 0, 0x4a3b2c));
+          for (const [lx, lz] of [[-0.7, -0.7], [0.7, -0.7], [-0.7, 0.7], [0.7, 0.7]]) props.push(placed(new THREE.BoxGeometry(0.1, 1.2, 0.1), tx + lx, h + 0.6, tz + lz, 0, 0, 0, 0x2a2622));
+        }
+        for (let k = 0; k < 4; k++) props.push(placed(new THREE.CylinderGeometry(0.03, 0.03, 1.4 + rng() * 1.6, 4), x + (rng() - 0.5) * w * 0.9, h + 0.9, z + (rng() - 0.5) * d * 0.9, 0, (rng() - 0.5) * 0.6, (rng() - 0.5) * 0.6, 0x5a2f1c));
+      }
       if (collapsed) {
         for (let k = 0; k < 22; k++) addRubble(x + (rng() - 0.5) * (w + 3), z + (rng() - 0.5) * (d + 3), 0.6 + rng() * 1.4);
       }
@@ -721,26 +760,139 @@
       addCollider(x - 0.15, x + 0.15, z - 0.15, z + 0.15, 6, false);
     }
 
-    function addCar(x, z, alongX, burning) {
-      const ry = (alongX ? Math.PI / 2 : 0) + (rng() - 0.5) * 0.25;
-      const flipped = rng() < 0.1;
-      const col = pick(RUST);
-      const tmp = [];
-      tmp.push(new THREE.BoxGeometry(1.9, 0.75, 4.2).translate(0, 0.62, 0));
-      tmp.push(new THREE.BoxGeometry(1.7, 0.6, 2.2).translate(0, 1.28, -0.2));
-      [[-0.95, -1.35], [0.95, -1.35], [-0.95, 1.35], [0.95, 1.35]].forEach(([wx, wz]) => {
-        const wg = new THREE.CylinderGeometry(0.36, 0.36, 0.28, 10);
-        wg.rotateZ(Math.PI / 2); wg.translate(wx, 0.36, wz);
-        tmp.push(wg);
-      });
-      tmp.forEach((g, i) => {
-        if (flipped) { g.rotateZ(Math.PI); g.translate(0, 1.7, 0); }
-        props.push(placed(g, x, 0, z, ry, 0, 0, i < 1 ? col : i < 2 ? 0x15181b : 0x0e0e0f));
-      });
-      const hw = alongX ? 2.2 : 1.05, hd = alongX ? 1.05 : 2.2;
-      addCollider(x - hw, x + hw, z - hd, z + hd, 1.6, false);
-      if (burning) fireSpots.push({ x, y: 1.5, z, s: 1.2, acc: 0 });
+    /* Rounded car bodies: side profile extruded + bevelled, glass, wheels with hubs, lights, bumpers. */
+    const CAR_COLS = [0x6b1f1a, 0x1f3550, 0x8a8c88, 0x4b5a3c, 0x9a8f78, 0x2a2a2c, 0x5a2d1c, 0x7a7466, 0x23404a];
+    const CAR_TYPES = [
+      { L: 4.5, W: 1.82, belt: 0.95, roof: 1.46, hood: 0.86, cabF: 0.9, cabB: -1.35, w: 2.3 },    // sedan
+      { L: 4.6, W: 1.95, belt: 1.05, roof: 1.78, hood: 0.98, cabF: 1.0, cabB: -2.0, w: 2.3 },     // SUV
+      { L: 5.0, W: 2.0, belt: 1.1, roof: 2.25, hood: 1.05, cabF: 1.55, cabB: -2.4, w: 2.5 }      // van
+    ];
+    function carBodyProfile(T, inset) {
+      const h = T.L / 2, i = inset || 0, sh = new THREE.Shape();
+      const lo = 0.3 + i;
+      sh.moveTo(-h + 0.12, lo);
+      sh.lineTo(-h + 0.05, 0.62); sh.quadraticCurveTo(-h, T.belt - 0.05, -h + 0.3, T.belt);          // tail
+      sh.lineTo(T.cabB - 0.1, T.belt);
+      sh.quadraticCurveTo(T.cabB + 0.15, T.roof - 0.02, T.cabB + 0.75, T.roof);                    // rear window -> roof
+      sh.lineTo(T.cabF - 0.55, T.roof);
+      sh.quadraticCurveTo(T.cabF - 0.1, T.roof - 0.05, T.cabF + 0.3, T.belt + 0.02);                // windshield
+      sh.lineTo(h - 0.55, T.hood);
+      sh.quadraticCurveTo(h - 0.05, T.hood - 0.03, h - 0.02, 0.6);                                   // nose
+      sh.lineTo(h - 0.1, lo);
+      sh.lineTo(-h + 0.12, lo);
+      return sh;
     }
+    function addCar(x, z, alongX, burning) {
+      const ry = (alongX ? Math.PI / 2 : 0) + (rng() - 0.5) * 0.3;
+      const flipped = rng() < 0.08;
+      const T = CAR_TYPES[rng() < 0.5 ? 0 : rng() < 0.6 ? 1 : 2];
+      const burnt = burning || rng() < 0.15;
+      const col = burnt ? 0x1c1a19 : pick(CAR_COLS);
+      const tilt = (rng() - 0.5) * 0.06, sag = rng() < 0.3 ? -0.12 : 0;       // one flat tyre
+      const parts = [];
+      const add = (g, c) => parts.push([g, c]);
+      const body = new THREE.ExtrudeGeometry(carBodyProfile(T), { depth: T.W - 0.24, bevelEnabled: true, bevelThickness: 0.12, bevelSize: 0.12, bevelSegments: 3, curveSegments: 10 });
+      body.translate(0, 0, -(T.W - 0.24) / 2); body.rotateY(Math.PI / 2);
+      add(body, col);
+      const glassShape = carBodyProfile(T, 0);
+      const glass = new THREE.ExtrudeGeometry(glassShape, { depth: T.W - 0.16, bevelEnabled: false, curveSegments: 6 });
+      glass.translate(0, 0, -(T.W - 0.16) / 2); glass.rotateY(Math.PI / 2);
+      glass.scale(1, 1, 1);
+      // only the upper part reads as glass: a slab slightly narrower than the cabin, clipped by body pillars
+      const cab = new THREE.BoxGeometry(T.W + 0.02, T.roof - T.belt - 0.18, T.cabF - T.cabB - 0.5).translate(0, (T.roof + T.belt) / 2 - 0.02, (T.cabF + T.cabB) / 2 - 0.1);
+      add(cab, burnt ? 0x0a0a0a : 0x141c24);
+      add(new THREE.BoxGeometry(T.W - 0.1, 0.05, T.cabF - T.cabB - 0.2).translate(0, T.roof + 0.07, (T.cabF + T.cabB) / 2 - 0.05), col);   // roof plate over glass
+      add(new THREE.BoxGeometry(T.W + 0.04, 0.24, 0.3).translate(0, 0.42, T.L / 2 - 0.06), 0x111213);   // front bumper
+      add(new THREE.BoxGeometry(T.W + 0.04, 0.24, 0.3).translate(0, 0.42, -T.L / 2 + 0.06), 0x111213);  // rear bumper
+      if (!burnt) {
+        [-1, 1].forEach((sx) => {
+          add(new THREE.BoxGeometry(0.42, 0.14, 0.06).translate(sx * (T.W / 2 - 0.4), 0.7, T.L / 2 + 0.02), 0xe6dfb8);   // headlights
+          add(new THREE.BoxGeometry(0.36, 0.12, 0.06).translate(sx * (T.W / 2 - 0.38), 0.78, -T.L / 2 - 0.01), 0x6a1010); // tail lights
+        });
+      }
+      [[-1, 1], [1, 1], [-1, -1], [1, -1]].forEach(([sx, sz], k) => {
+        const wz = sz * (T.L / 2 - 0.85), r = k === 2 ? 0.34 + sag * 0.2 : 0.35;
+        const tyre = new THREE.CylinderGeometry(r, r, 0.26, 14); tyre.rotateZ(Math.PI / 2); tyre.translate(sx * (T.W / 2 - 0.08), r + (k === 2 ? sag * 0.3 : 0), wz);
+        const hub = new THREE.CylinderGeometry(r * 0.55, r * 0.55, 0.28, 10); hub.rotateZ(Math.PI / 2); hub.translate(sx * (T.W / 2 - 0.08) + sx * 0.01, r + (k === 2 ? sag * 0.3 : 0), wz);
+        add(tyre, 0x0b0b0c); add(hub, 0x6d6f70);
+      });
+      parts.forEach(([g, c], i) => {
+        if (flipped) { g.rotateZ(Math.PI); g.translate(0, T.roof + 0.4, 0); }
+        props.push(placed(g, x, 0, z, ry, 0, tilt, c));
+      });
+      const hw = alongX ? T.L / 2 : T.W / 2, hd = alongX ? T.W / 2 : T.L / 2;
+      addCollider(x - hw, x + hw, z - hd, z + hd, T.roof, false);
+      if (burning) fireSpots.push({ x, y: T.roof, z, s: 1.2, acc: 0 });
+    }
+
+    /** Weapon shop: open-front kiosk at the south side of the plaza, facing the spawn point. */
+    function buildShop(propList) {
+      const P = (geo, x, y, z, col, ry) => propList.push(placed(geo, x, y, z, ry || 0, 0, 0, col));
+      const B = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+      P(B(10.2, 0.02, 5.2), 0, 0.15, 6.6, 0x2a2622);                        // floor
+      P(B(10.4, 3.3, 0.3), 0, 1.65, 8.95, 0x3d3833);                        // back wall
+      P(B(0.3, 3.3, 4.9), -5.05, 1.65, 6.55, 0x3d3833);                     // side walls
+      P(B(0.3, 3.3, 4.9), 5.05, 1.65, 6.55, 0x3d3833);
+      P(B(11, 0.3, 6.2), 0, 3.45, 6.4, 0x2b2f33);                           // roof
+      P(B(10.4, 1.2, 0.2), 0, 2.75, 3.95, 0x14171a);                        // sign backing
+      addCollider(-5.2, 5.2, 8.8, 9.1, 3.3, false);
+      addCollider(-5.2, -4.9, 4.1, 9.0, 3.3, false);
+      addCollider(4.9, 5.2, 4.1, 9.0, 3.3, false);
+      // counter + register
+      P(B(6, 1.05, 1.0), 0, 0.66, 7.0, 0x4a3a2c);
+      P(B(6.2, 0.08, 1.2), 0, 1.24, 7.0, 0x1d1f21);
+      P(B(0.6, 0.4, 0.5), 1.6, 1.48, 7.0, 0x22262a);
+      addCollider(-3.1, 3.1, 6.4, 7.6, 1.28, false);
+      // crates
+      P(B(1, 0.9, 1), -4.1, 0.6, 5.0, 0x5a4a2a, 0.3);
+      P(B(0.8, 0.7, 0.8), 4.0, 0.5, 5.2, 0x3c3c38, -0.2);
+      addCollider(-4.65, -3.55, 4.45, 5.55, 1.1, false);
+      addCollider(3.6, 4.4, 4.8, 5.6, 0.9, false);
+      // shelves + guns on the back wall
+      P(B(9.4, 0.06, 0.5), 0, 1.2, 8.65, 0x2a2622);
+      P(B(9.4, 0.06, 0.5), 0, 2.0, 8.65, 0x2a2622);
+      [[-3.6, 0.36], [-1.9, 0.72], [0, 1.12], [1.9, 1.24], [3.6, 1.45]].forEach(([gx, len]) => {
+        P(B(len, 0.16, 0.07), gx, 2.13, 8.62, 0x15181b);                    // body
+        P(B(len * 0.55, 0.05, 0.05), gx + len * 0.7, 2.14, 8.62, 0x0d0f11); // barrel
+        P(B(0.1, 0.24, 0.06), gx - len * 0.3, 1.98, 8.62, 0x24201c, 0.2);   // grip
+      });
+      for (let k = 0; k < 8; k++) P(B(0.5, 0.26, 0.3), -4.2 + k * 1.2, 1.36, 8.62, k % 2 ? 0x6a5a2a : 0x3a4a2a);   // ammo boxes
+    }
+    // Non-lit shop pieces (neon, sign, strip lights) live outside the merged meshes
+    (function shopNeon() {
+      const strip = new THREE.MeshBasicMaterial({ color: 0xffd9a6 });
+      const neon = new THREE.MeshBasicMaterial({ color: NEON });
+      const addM = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); scene.add(m); return m; };
+      addM(new THREE.BoxGeometry(9, 0.05, 0.12), strip, 0, 3.27, 5.3);
+      addM(new THREE.BoxGeometry(9, 0.05, 0.12), strip, 0, 3.27, 7.8);
+      addM(new THREE.BoxGeometry(9.2, 0.04, 0.04), strip, 0, 2.32, 8.72);
+      addM(new THREE.BoxGeometry(10.2, 0.05, 0.05), neon, 0, 3.36, 3.82);
+      addM(new THREE.BoxGeometry(10.2, 0.05, 0.05), neon, 0, 2.18, 3.82);
+      addM(new THREE.BoxGeometry(0.4, 0.06, 0.02), new THREE.MeshBasicMaterial({ color: 0x9dff5a }), 1.6, 1.62, 6.72);   // register screen
+      [[0, 3.1, 5.3, 7, 2.2, 0.32], [0, 3.1, 7.8, 7, 2.2, 0.32], [0, 2.4, 8.5, 9, 2.4, 0.3]].forEach(([x, y, z, w, h, o]) => {
+        const g = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffc890, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: o }));
+        g.position.set(x, y, z); g.scale.set(w, h, 1); scene.add(g);
+      });
+      const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 112;
+      const tex = new THREE.CanvasTexture(cv);
+      tex.encoding = THREE.sRGBEncoding;
+      const drawSign = () => {
+        const g = cv.getContext('2d');
+        g.fillStyle = '#0a0d0a'; g.fillRect(0, 0, 1024, 112);
+        g.textAlign = 'center'; g.textBaseline = 'middle'; g.direction = 'rtl';
+        g.shadowColor = '#9dff5a'; g.shadowBlur = 22; g.fillStyle = '#d6ff9a';
+        g.font = '800 68px Vazirmatn, Tahoma, sans-serif';
+        g.fillText('مغازه‌ی سلاح', 512, 58);
+        g.shadowBlur = 10; g.font = '700 30px Vazirmatn, Tahoma, sans-serif';
+        g.fillText('SHOP', 100, 56); g.fillText('SHOP', 924, 56);
+        tex.needsUpdate = true;
+      };
+      drawSign();
+      if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawSign);
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(10.2, 1.1), new THREE.MeshBasicMaterial({ map: tex }));
+      sign.position.set(0, 2.75, 3.83); sign.rotation.y = Math.PI;
+      scene.add(sign);
+    })();
 
     // ---- City blocks
     for (let i = -2; i <= 2; i++) {
@@ -761,7 +913,12 @@
           props.push(placed(new THREE.BoxGeometry(2, 0.45, 0.6), -5.5, 0.36, -2.5, -0.4, 0, 0.3, 0x3a2e24));
           addCar(-4.2, -5.5, true, false);
           addCar(6.5, -3, false, false);
-          for (let k = 0; k < 16; k++) addRubble(rng() * 16 - 8, rng() * 16 - 8, 0.6);
+          for (let k = 0; k < 16; k++) {
+            const rx = rng() * 16 - 8, rz = rng() * 16 - 8, n0 = props.length;
+            addRubble(rx, rz, 0.6);
+            if (rx > -6.2 && rx < 6.2 && rz > 3.2) props.length = n0;      // keep the shop floor clear
+          }
+          buildShop(props);
           [[-8, -8], [8, -8], [-8, 8], [8, 8]].forEach(([lx, lz]) => addLamp(lx, lz, lx > 0 ? -1 : 1, 0, true));
           continue;
         }
@@ -788,7 +945,7 @@
         }
         for (const [x, z, w, d] of lots) {
           const collapsed = rng() < 0.12;
-          const h = collapsed ? 2.5 + rng() * 3 : hMin + rng() * (hMax - hMin);
+          const h = collapsed ? 2.5 + rng() * 3 : (hMin + rng() * (hMax - hMin)) * 1.7;
           addBuilding(x, z, w, d, h, (rng() * 3) | 0, collapsed, true);
         }
         for (let k = 0; k < 12; k++) {
@@ -1205,10 +1362,19 @@
   const player = {
     pos: new THREE.Vector3(0, 0, 2), vx: 0, vz: 0, velY: 0, grounded: true,
     yaw: 0, pitch: 0, hp: PLAYER_CFG.maxHp, alive: true, eye: PLAYER_CFG.eye,
-    lastHurt: -99, moving: 0, running: false, bobT: 0, deathT: 0
+    lastHurt: -99, moving: 0, running: false, bobT: 0, deathT: 0, armor: 0, grenades: 0
   };
+  let spent = 0;
+  const wallet = () => Math.max(0, score - spent);
 
-  const arsenal = WEAPONS.map((def) => ({ def, mag: def.mag, reserve: def.reserve }));
+  const arsenal = WEAPONS.map((def, i) => ({ def, mag: def.mag, reserve: def.reserve, owned: i === 0 }));
+  function nextOwned(from, dir) {
+    for (let k = 1; k <= arsenal.length; k++) {
+      const i = (from + dir * k + arsenal.length * 4) % arsenal.length;
+      if (arsenal[i].owned) return i;
+    }
+    return from;
+  }
   let curW = 0, fireCd = 0, reloadT = 0, switchT = 0, pendingSwitch = 0, switchSwapped = true, autoReloadT = 0, flashT = 0;
   let scoped = false, scopeAmt = 0, baseFov = 72;
   const vm = { kick: 0, swayX: 0, swayY: 0, lookX: 0, lookY: 0, bobT: 0, recoilPitch: 0, heat: 0 };
@@ -1303,6 +1469,30 @@
   }
   const gunModels = [buildPistol(), buildSmg(), buildRifle(), buildShotgun(), buildSniper()];
   gunModels.forEach((g) => { g.visible = false; vmRoot.add(g); });
+
+  /** One signature finish per weapon (not purchasable): each gun keeps its own look in hand and in the shop. */
+  const SKINS = [
+    { name: 'فولاد و نئون',   metal: 0x9aa2ac, dark: 0x2a2e33, grip: 0x1f1c19, wood: 0x4a2f1c, accent: NEON,     mt: 0.75, rg: 0.28 },
+    { name: 'مشکی و نارنجی',  metal: 0x2f3237, dark: 0x121416, grip: 0x101010, wood: 0x222222, accent: 0xff7a1a, mt: 0.55, rg: 0.4 },
+    { name: 'شنی بیابانی',    metal: 0xb59d6c, dark: 0x6f603c, grip: 0x3d3524, wood: 0x6f603c, accent: 0xffd25a, mt: 0.35, rg: 0.55 },
+    { name: 'گردو و برنج',    metal: 0x1e2328, dark: 0x101214, grip: 0x1a1410, wood: 0x8a5230, accent: 0xd9a441, mt: 0.7,  rg: 0.35 },
+    { name: 'مات قطبی',       metal: 0xd0d5da, dark: 0x8d949b, grip: 0x2a2d30, wood: 0x8d949b, accent: 0xff3b3b, mt: 0.3,  rg: 0.5 }
+  ];
+  gunModels.forEach((g, i) => {
+    const sk = SKINS[i], cache = new Map();
+    g.traverse((o) => {
+      if (!o.isMesh) return;
+      const key = Object.keys(gm).find((k) => gm[k] === o.material);
+      if (!key) return;
+      if (!cache.has(key)) {
+        const m = gm[key].clone();
+        if (key === 'accent') m.emissive.setHex(sk.accent);
+        else { m.color.setHex(sk[key]); if (key === 'metal') { m.metalness = sk.mt; m.roughness = sk.rg; } }
+        cache.set(key, m);
+      }
+      o.material = cache.get(key);
+    });
+  });
   const muzzleFlash = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, color: 0xffd08a, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
   muzzleFlash.visible = false;
 
@@ -1435,6 +1625,7 @@
     Sound.reloadDone();
   }
   function switchWeapon(idx) {
+    if (!arsenal[idx] || !arsenal[idx].owned) { toast('این اسلحه رو نداری؛ از مغازه بخر'); return; }
     if (idx === curW && switchT <= 0) return;
     if (switchT > 0) return;
     reloadT = 0; autoReloadT = 0;
@@ -1517,9 +1708,174 @@
     }
   }
 
+  /* =========================================================================
+   * SHOP  (stand near the counter, press the shop button / E; the game freezes while you browse)
+   * ======================================================================= */
+  const SHOP = { x: 0, z: 6.2, r: 5.8 };
+  const shopBtn = $('btn-shop');
+  let shopEquip = -1, shopBtnOn = false;
+  const nearShop = () => Math.hypot(player.pos.x - SHOP.x, player.pos.z - SHOP.z) < SHOP.r;
+  const fmt = (n) => fa(String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '٬'));
+
+  /* 3D weapon preview inside the shop (own tiny renderer, only drawn while the shop is open) */
+  let pv = null;
+  function initPreview() {
+    if (pv) return;
+    const cv = $('shop-canvas');
+    const r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+    r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    r.outputEncoding = renderer.outputEncoding; r.toneMapping = renderer.toneMapping; r.toneMappingExposure = 1.05;
+    const sc = new THREE.Scene();
+    sc.add(new THREE.HemisphereLight(0xdfe8ff, 0x332a22, 1.2));
+    const key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(2, 3, 4); sc.add(key);
+    const rim = new THREE.DirectionalLight(0x9dff5a, 0.6); rim.position.set(-3, 1, -2); sc.add(rim);
+    const cam = new THREE.PerspectiveCamera(30, 2, 0.1, 30); cam.position.set(0, 0.15, 4.4);
+    const holders = gunModels.map((g) => {
+      const c = g.clone(true), junk = [];
+      c.traverse((o) => { if (o.isSprite || o.isLight) junk.push(o); o.visible = true; });
+      junk.forEach((o) => o.parent && o.parent.remove(o));
+      c.position.set(0, 0, 0); c.rotation.set(0, 0, 0); c.scale.set(1, 1, 1);
+      const box = new THREE.Box3().setFromObject(c), size = box.getSize(new THREE.Vector3()), ctr = box.getCenter(new THREE.Vector3());
+      c.position.sub(ctr);
+      const h = new THREE.Group(); h.add(c);
+      h.scale.setScalar(2.6 / Math.max(size.x, size.z, 0.05));
+      h.visible = false; sc.add(h);
+      return h;
+    });
+    pv = { r, sc, cam, holders, sel: 0, t: 0, w: 0, h: 0 };
+  }
+  function setPreview(i) {
+    if (!pv || !pv.holders[i]) return;
+    pv.sel = i; pv.holders.forEach((h, k) => { h.visible = k === i; });
+    $('sv-name').innerHTML = '<b>' + WEAPONS[i].name + '</b><small>اسکین: ' + SKINS[i].name + '</small>';
+  }
+  function renderPreview(dt) {
+    if (!pv) return;
+    const cv = pv.r.domElement, w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    if (w !== pv.w || h !== pv.h) { pv.w = w; pv.h = h; pv.r.setSize(w, h, false); pv.cam.aspect = w / h; pv.cam.updateProjectionMatrix(); }
+    pv.t += dt;
+    const g = pv.holders[pv.sel];
+    g.rotation.y = -Math.PI / 2 + Math.sin(pv.t * 0.7) * 0.85;      // slow turn so every side of the finish is visible
+    g.rotation.x = Math.sin(pv.t * 0.5) * 0.08;
+    pv.r.render(pv.sc, pv.cam);
+  }
+
+  function openShop() {
+    if (state !== 'playing' || !player.alive || !nearShop()) return;
+    state = 'shop';
+    setScope(false); resetInput(); input.firing = false; input.mouseFire = false;
+    exitPointerLock();
+    shopEquip = -1;
+    $('shop-msg').textContent = 'با امتیازت خرید کن';
+    initPreview();
+    setPreview(Math.max(0, arsenal.findIndex((a, i) => i > 0 && !a.owned)));
+    renderShop();
+    showScreen('menu-shop');
+    Sound.pickup();
+  }
+  function closeShop() {
+    if (state !== 'shop') return;
+    state = 'playing';
+    showScreen(null);
+    last = performance.now();
+    requestLock();
+    if (shopEquip >= 0 && shopEquip !== curW) switchWeapon(shopEquip);
+    shopEquip = -1;
+  }
+
+  function renderShop() {
+    const body = $('shop-body'), top = body.scrollTop, w = wallet();
+    $('shop-wallet').textContent = fmt(w);
+    const row = (id, name, desc, price, state, label) => {
+      const dis = state === 'own' || state === 'full' || (state === 'ok' && w < price);
+      const cls = state === 'own' ? ' owned' : state === 'full' ? ' full' : w < price ? ' poor' : '';
+      const btn = state === 'own' ? '<span class="si-tag">داری</span>' : state === 'full' ? '<span class="si-tag">پُره</span>'
+        : '<button class="si-buy" data-buy="' + id + '"' + (dis ? ' disabled' : '') + '>' + fmt(price) + '</button>';
+      const vm2 = /^(weapon|ammo):(.+)/.exec(id), vi = vm2 ? WEAPONS.findIndex((d) => d.id === vm2[2]) : -1;
+      return '<div class="shop-item' + cls + '"' + (vi >= 0 ? ' data-view="' + vi + '"' : '') + '><div class="si-info"><b>' + name + '</b><small>' + desc + '</small></div>' + btn + '</div>';
+    };
+    let h = '<h3>تفنگ‌ها</h3>';
+    WEAPONS.forEach((d, i) => {
+      if (i === 0) return;
+      const it = SHOP_WEAPONS[d.id];
+      h += row('weapon:' + d.id, d.name, it.desc, it.price, arsenal[i].owned ? 'own' : 'ok');
+    });
+    h += '<h3>گلوله</h3>';
+    WEAPONS.forEach((d, i) => {
+      const a = arsenal[i], it = SHOP_AMMO[d.id];
+      if (!a.owned) return;
+      const full = a.reserve >= d.maxReserve;
+      h += row('ammo:' + d.id, 'گلوله‌ی ' + d.name, '+' + fa(it.n) + '  ·  الان ' + fa(a.reserve) + ' از ' + fa(d.maxReserve), it.price, full ? 'full' : 'ok');
+    });
+    h += '<h3>درمان و زره</h3>';
+    SHOP_GEAR.forEach((g) => {
+      let st = 'ok';
+      if (g.id === 'medkit' && player.hp >= PLAYER_CFG.maxHp) st = 'full';
+      if (g.id.startsWith('armor') && player.armor >= MAX_ARMOR) st = 'full';
+      if (g.id === 'grenade' && player.grenades >= MAX_GRENADES) st = 'full';
+      const cur = g.id === 'medkit' ? '  ·  جان ' + fa(Math.ceil(player.hp)) : g.id === 'grenade' ? '  ·  داری ' + fa(player.grenades) + ' از ' + fa(MAX_GRENADES) : '  ·  زره ' + fa(Math.ceil(player.armor));
+      h += row('gear:' + g.id, g.name, g.desc + cur, g.price, st);
+    });
+    body.innerHTML = h;
+    body.scrollTop = top;
+  }
+
+  function buyItem(id) {
+    if (state !== 'shop') return;
+    const [kind, key] = id.split(':');
+    let cost = 0, msg = '';
+    if (kind === 'weapon') {
+      const i = WEAPONS.findIndex((d) => d.id === key), a = arsenal[i], it = SHOP_WEAPONS[key];
+      if (!a || a.owned || !it) return;
+      cost = it.price;
+      if (wallet() < cost) { shopFail(); return; }
+      a.owned = true; a.mag = a.def.mag; a.reserve = Math.ceil(a.def.reserve * 0.5);
+      shopEquip = i; msg = a.def.name + ' خریدی'; setPreview(i);
+    } else if (kind === 'ammo') {
+      const i = WEAPONS.findIndex((d) => d.id === key), a = arsenal[i], it = SHOP_AMMO[key];
+      if (!a || !a.owned || !it || a.reserve >= a.def.maxReserve) return;
+      cost = it.price;
+      if (wallet() < cost) { shopFail(); return; }
+      a.reserve = Math.min(a.def.maxReserve, a.reserve + it.n);
+      msg = 'گلوله‌ی ' + a.def.name + ' خریدی';
+    } else if (kind === 'gear') {
+      const g = SHOP_GEAR.find((x) => x.id === key);
+      if (!g) return;
+      cost = g.price;
+      if (key === 'medkit') {
+        if (player.hp >= PLAYER_CFG.maxHp) return;
+        if (wallet() < cost) { shopFail(); return; }
+        player.hp = Math.min(PLAYER_CFG.maxHp, player.hp + 60);
+      } else if (key === 'grenade') {
+        if (player.grenades >= MAX_GRENADES) return;
+        if (wallet() < cost) { shopFail(); return; }
+        player.grenades = Math.min(MAX_GRENADES, player.grenades + 2);
+      } else {
+        if (player.armor >= MAX_ARMOR) return;
+        if (wallet() < cost) { shopFail(); return; }
+        player.armor = key === 'armor2' ? MAX_ARMOR : Math.min(MAX_ARMOR, player.armor + 40);
+      }
+      msg = g.name + ' گرفتی';
+    } else return;
+    spent += cost;
+    Sound.pickup();
+    $('shop-msg').textContent = msg;
+    renderShop();
+  }
+  function shopFail() { Sound.empty(); $('shop-msg').textContent = 'امتیازت کافی نیست'; }
+  $('shop-body').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-buy]');
+    if (b && !b.disabled) { buyItem(b.dataset.buy); return; }
+    const r = ev.target.closest('[data-view]');
+    if (r) setPreview(+r.dataset.view);
+  });
+
   function hurtPlayer(amount, fromX, fromZ) {
     if (!player.alive) return;
-    player.hp = Math.max(0, player.hp - amount);
+    let dmg = amount;
+    if (player.armor > 0) { const ab = Math.min(player.armor, amount * ARMOR_ABSORB); player.armor -= ab; dmg = amount - ab; }
+    player.hp = Math.max(0, player.hp - dmg);
     player.lastHurt = gameTime;
     dmgFlash = Math.min(1, dmgFlash + 0.35 + amount / 70);
     addShake(0.25 + amount / 60);
@@ -2093,7 +2449,7 @@
       player.hp = Math.min(PLAYER_CFG.maxHp, player.hp + 25);
       toast('+۲۵ جان');
     } else {
-      arsenal.forEach((a) => { a.reserve = Math.min(a.def.maxReserve, a.reserve + Math.ceil(a.def.mag * 0.6)); });
+      arsenal.forEach((a) => { if (a.owned) a.reserve = Math.min(a.def.maxReserve, a.reserve + Math.ceil(a.def.mag * 0.6)); });
       toast('مهمات برداشتی');
     }
     Sound.pickup();
@@ -2140,7 +2496,8 @@
     rayDirty = true;
     explosion(b.pos.x, 0.6, b.pos.z);
   }
-  function explosion(x, y, z) {
+  function explosion(x, y, z, power) {
+    const pw = power || 1;
     _ex.set(x, y, z);
     fxExplosion(_ex);
     explosionLight.position.set(x, y + 1.5, z);
@@ -2157,7 +2514,7 @@
       if (d > R) continue;
       _v2.set(ex, 0, ez).normalize();
       _v3.copy(e.root.position); _v3.y += 1.1 * e.def.scale;
-      damageEnemy(e, 190 * (1 - d / R) + 20, _v3, _v2, false, true);
+      damageEnemy(e, (190 * (1 - d / R) + 20) * pw, _v3, _v2, false, true);
     }
     for (const b of barrels) {
       if (!b.active || b.fuse > 0) continue;
@@ -2180,6 +2537,72 @@
     }
     rayDirty = true;
   }
+
+  /* ---- Hand grenades: thrown in an arc, bounce off ground and walls, explode after a fuse ---- */
+  const grenades = [];
+  const gMatBody = new THREE.MeshStandardMaterial({ color: 0x2f3a2a, roughness: 0.6, metalness: 0.4 });
+  const gMatTop = new THREE.MeshBasicMaterial({ color: 0x9a9a92 });
+  const gGeo = new THREE.SphereGeometry(0.11, 10, 8), gTopGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.08, 6);
+  let throwCd = 0;
+  function makeGrenade() {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(gGeo, gMatBody));
+    const top = new THREE.Mesh(gTopGeo, gMatTop); top.position.y = 0.12; g.add(top);
+    const blink = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xff3020, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 }));
+    blink.scale.set(0.7, 0.7, 1); blink.position.y = 0.08; g.add(blink);
+    g.visible = false; scene.add(g);
+    return { g, blink, v: new THREE.Vector3(), fuse: 0, active: false, spin: 0 };
+  }
+  function throwGrenade() {
+    if (state !== 'playing' || !player.alive || throwCd > 0) return;
+    if (player.grenades <= 0) { toast('بمب دستی نداری؛ از مغازه بخر'); Sound.empty(); return; }
+    let gr = grenades.find((q) => !q.active);
+    if (!gr) { if (grenades.length >= 5) return; gr = makeGrenade(); grenades.push(gr); }
+    player.grenades--; throwCd = 0.7;
+    camera.updateMatrixWorld();
+    camera.getWorldDirection(_dir);
+    gr.g.position.copy(camera.position).addScaledVector(_dir, 0.6); gr.g.position.y -= 0.15;
+    gr.v.copy(_dir).multiplyScalar(15); gr.v.y += 3.2;
+    gr.v.x += player.vx * 0.6; gr.v.z += player.vz * 0.6;
+    gr.fuse = GRENADE_FUSE; gr.active = true; gr.g.visible = true; gr.spin = rand(6, 12);
+    vm.kick = Math.min(0.3, vm.kick + 0.12);
+    Sound.swap();
+  }
+  function updateGrenades(dt) {
+    throwCd = Math.max(0, throwCd - dt);
+    for (const q of grenades) {
+      if (!q.active) continue;
+      const p = q.g.position, v = q.v, R = 0.12;
+      q.fuse -= dt;
+      v.y -= 20 * dt;
+      const px = p.x, pz = p.z;
+      p.x += v.x * dt; p.y += v.y * dt; p.z += v.z * dt;
+      for (const c of colliders) {                                   // bounce off walls / props
+        if (!c.active || p.y - R > c.top) continue;
+        if (p.x + R > c.minX && p.x - R < c.maxX && p.z + R > c.minZ && p.z - R < c.maxZ) {
+          if (p.y - R > c.top - 0.25 && v.y < 0) { p.y = c.top + R; v.y = -v.y * 0.35; v.x *= 0.7; v.z *= 0.7; continue; }
+          if (px + R <= c.minX || px - R >= c.maxX) { p.x = px; v.x *= -0.45; } else { p.z = pz; v.z *= -0.45; }
+          v.y *= 0.8;
+        }
+      }
+      if (p.y < 0.15) {                                              // ground
+        p.y = 0.15;
+        if (Math.abs(v.y) > 1.5) v.y = -v.y * 0.4; else v.y = 0;
+        v.x *= 0.72; v.z *= 0.72;
+      }
+      if (Math.abs(p.x) > WORLD_LIMIT) { p.x = Math.sign(p.x) * WORLD_LIMIT; v.x *= -0.4; }
+      if (Math.abs(p.z) > WORLD_LIMIT) { p.z = Math.sign(p.z) * WORLD_LIMIT; v.z *= -0.4; }
+      q.g.rotation.x += q.spin * dt * Math.min(1, Math.hypot(v.x, v.z) / 4);
+      q.g.rotation.z += q.spin * 0.6 * dt;
+      const rate = q.fuse < 0.7 ? 22 : 8;                             // blink faster as it runs out
+      q.blink.material.opacity = Math.sin(q.fuse * rate) > 0 ? 0.9 : 0.1;
+      if (q.fuse <= 0) {
+        q.active = false; q.g.visible = false; q.blink.material.opacity = 0;
+        explosion(p.x, Math.max(0.6, p.y), p.z, 1.35);
+      }
+    }
+  }
+  function clearGrenades() { for (const q of grenades) { q.active = false; q.g.visible = false; } throwCd = 0; }
 
   /* =========================================================================
    * 09. WAVE DIRECTOR
@@ -2250,7 +2673,7 @@
     score += bonus;
     player.hp = Math.min(PLAYER_CFG.maxHp, player.hp + 40);
     arsenal.forEach((a) => {
-      a.reserve = Math.min(a.def.maxReserve, a.reserve + Math.ceil(a.def.maxReserve * 0.5));
+      if (a.owned) a.reserve = Math.min(a.def.maxReserve, a.reserve + Math.ceil(a.def.maxReserve * 0.5));
     });
     // supplies scattered around you
     const kinds = ['ammo', 'ammo', 'health', 'ammo'];
@@ -2409,13 +2832,15 @@
   }
   bindTap($('btn-jump'), () => { if (state === 'playing') jump(); });
   bindTap($('btn-reload'), () => { if (state === 'playing') startReload(); });
-  bindTap($('btn-switch'), () => { if (state === 'playing') switchWeapon((curW + 1) % arsenal.length); });
+  bindTap($('btn-switch'), () => { if (state === 'playing') switchWeapon(nextOwned(curW, 1)); });
   bindTap(sprintBtn, () => {
     if (state !== 'playing') return;
     input.sprint = !input.sprint;
     sprintBtn.classList.toggle('toggled', input.sprint);
   });
   bindTap($('btn-pause'), () => { if (state === 'playing') pause(); });
+  bindTap($('btn-shop'), openShop);
+  bindTap($('btn-grenade'), throwGrenade);
   bindTap($('btn-scope'), toggleScope);
 
   // Block browser gestures (pinch zoom, pull-to-refresh, long-press menus)
@@ -2430,7 +2855,9 @@
     if (state === 'playing') {
       if (k === 'Space') { jump(); ev.preventDefault(); }
       else if (k === 'KeyR') startReload();
-      else if (k === 'KeyQ') switchWeapon((curW + 1) % arsenal.length);
+      else if (k === 'KeyQ') switchWeapon(nextOwned(curW, 1));
+      else if (k === 'KeyE' || k === 'KeyB') openShop();
+      else if (k === 'KeyG') throwGrenade();
       else if (k === 'Digit1') switchWeapon(0);
       else if (k === 'Digit2') switchWeapon(1);
       else if (k === 'Digit3') switchWeapon(2);
@@ -2440,6 +2867,8 @@
       else if (k === 'KeyP' || k === 'Escape') pause();
     } else if (state === 'paused' && (k === 'KeyP')) {
       resume();
+    } else if (state === 'shop' && (k === 'KeyE' || k === 'KeyB' || k === 'Escape')) {
+      closeShop();
     }
   });
   window.addEventListener('keyup', (ev) => { input.keys[ev.code] = false; });
@@ -2477,6 +2906,7 @@
    * ======================================================================= */
   const H = {
     hud: $('hud'), hpFill: $('hp-fill'), hpLag: $('hp-lag'), hpText: $('hp-text'),
+    armorFill: $('armor-fill'), armorText: $('armor-text'), armorRow: $('armor-row'),
     score: $('score-text'), kills: $('kills-text'), wave: $('wave-text'), phase: $('phase-text'), enemies: $('enemies-text'),
     mag: $('ammo-mag'), reserve: $('ammo-reserve'), weaponName: $('weapon-name'),
     slots: $('weapon-slots').children, ammoBox: document.querySelector('.ammo-box'),
@@ -2581,7 +3011,7 @@
       H.hud.classList.toggle('hp-low', low);
       H.fxLowhp.classList.toggle('on', low);
     }
-    setText('score', H.score, String(score));
+    setText('score', H.score, String(wallet()));
     setText('kills', H.kills, String(kills));
     if (cycle.phase === 'day') {
       setText('phase', H.phase, 'روز ' + cycle.night + ' · شب بعد تا');
@@ -2598,9 +3028,24 @@
     setText('wname', H.weaponName, w.def.name);
     const hasSc = !!w.def.scope;
     if (hudCache.sc !== hasSc) { hudCache.sc = hasSc; $('btn-scope').classList.toggle('hidden', !hasSc); }
-    if (hudCache.slot !== curW) {
-      hudCache.slot = curW;
-      for (let i = 0; i < H.slots.length; i++) H.slots[i].classList.toggle('on', i === curW);
+    let sig = String(curW);
+    for (let i = 0; i < arsenal.length; i++) sig += arsenal[i].owned ? '1' : '0';
+    if (hudCache.slot !== sig) {
+      hudCache.slot = sig;
+      for (let i = 0; i < H.slots.length; i++) { H.slots[i].classList.toggle('on', i === curW); H.slots[i].classList.toggle('off', !arsenal[i].owned); }
+    }
+    if (hudCache.gren !== player.grenades) {
+      hudCache.gren = player.grenades;
+      $('gren-n').textContent = fa(player.grenades);
+      $('btn-grenade').classList.toggle('empty', player.grenades <= 0);
+      $('btn-grenade').dataset.n = fa(player.grenades);
+    }
+    const arKey = Math.round(player.armor);
+    if (hudCache.armor !== arKey) {
+      hudCache.armor = arKey;
+      H.armorFill.style.transform = 'scaleX(' + clamp(player.armor / MAX_ARMOR, 0, 1).toFixed(3) + ')';
+      H.armorText.textContent = fa(arKey);
+      H.armorRow.classList.toggle('empty', arKey <= 0);
     }
     const low = w.mag <= Math.ceil(w.def.mag * 0.25);
     if (hudCache.lowAmmo !== low) { hudCache.lowAmmo = low; H.ammoBox.classList.toggle('low', low); }
@@ -2632,7 +3077,7 @@
   }
 
   // ---- Screens
-  const SCREENS = ['menu-main', 'menu-settings', 'menu-howto', 'menu-pause', 'menu-over'];
+  const SCREENS = ['menu-main', 'menu-settings', 'menu-howto', 'menu-pause', 'menu-over', 'menu-shop'];
   let returnScreen = 'menu-main';
   function showScreen(id) { SCREENS.forEach((s) => $(s).classList.toggle('active', s === id)); }
   function setHudVisible(v) { H.hud.classList.toggle('hidden', !v); }
@@ -2660,9 +3105,10 @@
     sparks.clear(); smoke.clear();
     pendingNumbers.clear();
     player.pos.set(0, 0, 2); player.vx = 0; player.vz = 0; player.velY = 0; player.grounded = true;
-    player.yaw = 0; player.pitch = 0; player.hp = PLAYER_CFG.maxHp; player.alive = true;
+    player.yaw = Math.PI; player.pitch = 0; player.hp = PLAYER_CFG.maxHp; player.alive = true;
     player.eye = PLAYER_CFG.eye; player.lastHurt = -99; player.deathT = 0; player.moving = 0;
-    arsenal.forEach((a) => { a.mag = a.def.mag; a.reserve = a.def.reserve; });
+    arsenal.forEach((a, i) => { a.owned = i === 0; a.mag = a.def.mag; a.reserve = i === 0 ? a.def.reserve : 0; });
+    spent = 0; player.armor = 0; player.grenades = 0; shopEquip = -1; clearGrenades();
     curW = 0; showGun(0); resetScopeNow();
     reloadT = 0; switchT = 0; fireCd = 0; autoReloadT = 0; flashT = 0;
     vm.kick = 0; vm.heat = 0; vm.recoilPitch = 0;
@@ -2686,6 +3132,7 @@
     setHudVisible(true);
     startNight(1);
     updateCamera(0);
+    toast('مغازه جلوته؛ نزدیک شو و «مغازه» رو بزن');
     requestLock();
   }
   function pause() {
@@ -2749,6 +3196,7 @@
         showScreen('menu-howto'); break;
       case 'back': showScreen(returnScreen); break;
       case 'resume': resume(); break;
+      case 'shop-close': closeShop(); break;
       case 'menu': toMenu(); break;
       case 'portrait-ok': document.body.classList.add('portrait-ok'); break;
       default: break;
@@ -2805,7 +3253,7 @@
   const LAY_KEY = 'ashfall.layout';
   const LAY_EL = {
     fire: $('btn-fire'), jump: $('btn-jump'), reload: $('btn-reload'), switch: $('btn-switch'),
-    sprint: $('btn-sprint'), scope: $('btn-scope'), pause: $('btn-pause'),
+    sprint: $('btn-sprint'), grenade: $('btn-grenade'), scope: $('btn-scope'), pause: $('btn-pause'),
     ammo: document.querySelector('.ammo-box'), joy: joyBase
   };
   let layoutCur = {}, layoutDraft = {}, layoutPrev = 'menu', layoutHudWas = false, laySel = null, layDrag = null;
@@ -3127,6 +3575,7 @@
     moonHalo.material.opacity = 0.45 * (1 - k);
     moonCore.material.opacity = 0.95 * (1 - k);
     renderer.toneMappingExposure = lerp(1.3, 1.0, k);
+    shopLight.intensity = lerp(2.2, 0.9, k);
     emisBase = lerp(0.26, 0.05, k);
     const vig = Math.round((1 - 0.55 * k) * 50) / 50;
     if (vig !== lastVig) { lastVig = vig; $('fx-vignette').style.opacity = vig; }
@@ -3178,6 +3627,7 @@
       updateEnemies(dt);
       updateWaves(dt);
       updateBarrels(dt);
+      updateGrenades(dt);
       updatePickups(dt);
       if (state === 'playing') {
         updateCamera(dt);
@@ -3191,13 +3641,16 @@
       updateMenuCamera(dt);
     }
 
-    if (state !== 'paused') {
+    if (state !== 'paused' && state !== 'shop') {
       sparks.update(dt);
       smoke.update(dt);
       updateTracers(dt);
       updateEnvironment(dt);
     }
-    if (state === 'playing' || state === 'dead' || state === 'paused') updateHUD(state === 'paused' ? 0 : dt);
+    if (state === 'playing' || state === 'dead' || state === 'paused' || state === 'shop') updateHUD(state === 'paused' || state === 'shop' ? 0 : dt);
+    if (state === 'shop') renderPreview(dt);
+    const showBtn = state === 'playing' && player.alive && nearShop();
+    if (showBtn !== shopBtnOn) { shopBtnOn = showBtn; shopBtn.classList.toggle('hidden', !showBtn); }
     render();
   }
 

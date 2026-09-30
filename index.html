@@ -32,6 +32,11 @@
         <div class="hp-bar"><div id="hp-lag"></div><div id="hp-fill"></div></div>
         <span id="hp-text">۱۰۰</span>
       </div>
+      <div class="hp-row armor-row empty" id="armor-row">
+        <span class="hp-label">زره</span>
+        <div class="hp-bar"><div id="armor-fill"></div></div>
+        <span id="armor-text">۰</span>
+      </div>
       <div class="stat-row"><span>امتیاز</span><b id="score-text">۰</b></div>
       <div id="fps-meter" class="hidden">60 FPS</div>
     </div>
@@ -55,6 +60,7 @@
     <div id="dmg-numbers"></div>
     <div id="score-popups"></div>
     <div id="toast"></div>
+    <button id="btn-shop" class="hidden" aria-label="Shop">🛒 مغازه</button>
 
     <div id="wave-banner">
       <small id="wave-banner-sub"></small>
@@ -69,6 +75,7 @@
     <div class="ammo-box panel-hud">
       <div id="weapon-name">تپانچه</div>
       <div class="ammo"><b id="ammo-mag">۱۲</b><span class="sep">/</span><em id="ammo-reserve">۴۸</em></div>
+      <div class="gren-line">بمب دستی <b id="gren-n">۰</b></div>
       <div id="weapon-slots"><i class="on"></i><i></i><i></i><i></i><i></i></div>
     </div>
 
@@ -92,6 +99,9 @@
           <svg viewBox="0 0 24 24"><path d="M4 8h14l-3-3M20 16H6l3 3" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
         <button id="btn-sprint" class="ctrl-btn small" aria-label="Sprint">بدو</button>
+        <button id="btn-grenade" class="ctrl-btn small empty" data-n="۰" aria-label="Grenade">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="14" r="6.5" fill="none" stroke-width="2.2"/><path d="M10 7.5h4M14 7.5l3-3.5M15 3.6h3" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <button id="btn-scope" class="ctrl-btn small hidden" aria-label="Scope">زوم</button>
       </div>
     </div>
@@ -160,6 +170,7 @@
             <dt>شست چپ</dt><dd>جویستیک حرکت؛ تا آخر جلو بکشی می‌دوی.</dd>
             <dt>سمت راست</dt><dd>بکش تا دوربین بچرخه.</dd>
             <dt>آتش</dt><dd>نگه دار تا شلیک کنه.</dd>
+            <dt>بمب</dt><dd>دکمه‌ی بمب دستی رو بزن؛ بعد از ۲ ثانیه می‌ترکه.</dd>
             <dt>زوم</dt><dd>فقط با تک‌تیرانداز: دوربین تفنگ باز می‌شه.</dd>
           </dl>
           <h3>کیبورد و ماوس</h3>
@@ -167,6 +178,8 @@
             <dt>WASD + ماوس</dt><dd>حرکت و نشانه‌گیری</dd>
             <dt>کلیک چپ / راست (یا Z)</dt><dd>شلیک / زوم اسنایپر</dd>
             <dt>Space / Shift</dt><dd>پرش / دویدن</dd>
+            <dt>G</dt><dd>پرتاب بمب دستی</dd>
+            <dt>E</dt><dd>مغازه (نزدیکش)</dd>
             <dt>R / Q / ۱ تا ۵</dt><dd>خشاب / اسلحه‌ی بعدی / انتخاب اسلحه</dd>
           </dl>
         </div>
@@ -181,6 +194,7 @@
           <ul class="tips">
             <li>تیر به سر دو برابر (با اسنایپر سه برابر) می‌زنه.</li>
             <li>مهمات محدوده و جانت خودبه‌خود برنمی‌گرده.</li>
+            <li>اول بازی فقط تپانچه داری. با امتیازی که می‌گیری از مغازه‌ی وسط شهر تفنگ، گلوله، کیت درمان و زره بخر (کنار مغازه دکمه‌ی «مغازه» یا کلید E).</li>
             <li>شب‌ها موج‌موج می‌آن. صبح که شد چند دقیقه آرومه: مهمات جمع کن و آماده شو.</li>
             <li>بشکه‌های قرمز منفجر می‌شن؛ دور بمون.</li>
           </ul>
@@ -198,6 +212,19 @@
         <button class="menu-btn" data-action="restart">شروع دوباره</button>
         <button class="menu-btn ghost" data-action="menu">منوی اصلی</button>
       </nav>
+    </div>
+  </section>
+
+  <section id="menu-shop" class="screen">
+    <div class="sheet wide shop">
+      <header class="sheet-head">
+        <h2>مغازه</h2>
+        <div class="shop-wallet">امتیاز <b id="shop-wallet">۰</b></div>
+        <button class="menu-btn ghost" data-action="shop-close">بستن</button>
+      </header>
+      <div class="shop-msg" id="shop-msg"></div>
+      <div class="shop-view"><canvas id="shop-canvas"></canvas><div class="sv-name" id="sv-name"></div></div>
+      <div class="sheet-body scroll" id="shop-body"></div>
     </div>
   </section>
 
